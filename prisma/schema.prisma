@@ -1,0 +1,305 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  code        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Settings / metadata
+  locale      String?  // e.g. "en-KE"
+  currency    String?  // e.g. "KES"
+
+  // Relations
+  users          User[]
+  unitsOfMeasure UnitOfMeasure[]
+  locations      Location[]
+  products       Product[]
+  productBatches ProductBatch[]
+  stockQuants    StockQuant[]
+  customers      Customer[]
+  invoices       Invoice[]
+  transactions   Transaction[]
+  members        Member[]
+  accounts       Account[]
+  loans          Loan[]
+  sessions       Session[]
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  name      String?
+  tenantId  String   @db.Uuid
+  role      String   // e.g. "owner", "staff"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model UnitOfMeasure {
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String
+  tenantId     String          @db.Uuid
+  baseUnitId   String?         @db.Uuid
+  ratio        Decimal
+  category     String          // "Length", "Weight", "Unit", etc.
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id])
+  baseUnit     UnitOfMeasure?  @relation("BaseUnit", fields: [baseUnitId], references: [id])
+  derivedUnits UnitOfMeasure[] @relation("BaseUnit")
+
+  products       Product[]
+  stockQuants    StockQuant[]
+  productBatches ProductBatch[]
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+}
+
+model Location {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  code      String
+  tenantId  String   @db.Uuid
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  stockQuants StockQuant[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model Product {
+  id              String          @id @default(uuid()) @db.Uuid
+  tenantId        String          @db.Uuid
+  name            String
+  sku             String
+  description     String?
+  defaultUomId    String          @db.Uuid
+  category        String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  defaultUom      UnitOfMeasure   @relation(fields: [defaultUomId], references: [id])
+  batches         ProductBatch[]
+  stockQuants     StockQuant[]
+  invoiceItems    InvoiceItem[]
+
+  @@index([tenantId])
+  @@unique([tenantId, sku])
+}
+
+model ProductBatch {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @db.Uuid
+  productId   String        @db.Uuid
+  batchNumber String
+  expiryDate  DateTime?
+  uomId       String        @db.Uuid
+  createdAt   DateTime      @default(now())
+
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  product     Product       @relation(fields: [productId], references: [id])
+  uom         UnitOfMeasure @relation(fields: [uomId], references: [id])
+  stockQuants StockQuant[]
+
+  @@index([tenantId])
+  @@unique([tenantId, productId, batchNumber])
+}
+
+model StockQuant {
+  id         String        @id @default(uuid()) @db.Uuid
+  tenantId   String        @db.Uuid
+  productId  String        @db.Uuid
+  locationId String        @db.Uuid
+  batchId    String?       @db.Uuid
+  uomId      String        @db.Uuid
+  quantity   Decimal       // stored in the given UoM
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  product    Product       @relation(fields: [productId], references: [id])
+  location   Location      @relation(fields: [locationId], references: [id])
+  batch      ProductBatch? @relation(fields: [batchId], references: [id])
+  uom        UnitOfMeasure @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, productId, locationId, batchId, uomId])
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  invoices Invoice[]
+
+  @@index([tenantId])
+}
+
+model Invoice {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     String        @db.Uuid
+  customerId   String        @db.Uuid
+  invoiceNo    String
+  status       String        // "Draft", "Posted", "Paid", etc.
+  issueDate    DateTime
+  dueDate      DateTime?
+  totalAmount  Decimal       @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  items        InvoiceItem[]
+  transactions Transaction[]
+
+  @@index([tenantId])
+  @@unique([tenantId, invoiceNo])
+}
+
+model InvoiceItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  invoiceId  String   @db.Uuid
+  productId  String   @db.Uuid
+  quantity   Decimal
+  unitPrice  Decimal
+  uomId      String   @db.Uuid
+  lineTotal  Decimal  @default(0)
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  invoice    Invoice       @relation(fields: [invoiceId], references: [id])
+  product    Product       @relation(fields: [productId], references: [id])
+  uom        UnitOfMeasure @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Transaction {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  invoiceId   String?  @db.Uuid
+  accountId   String?  @db.Uuid
+  amount      Decimal
+  type        String   // "Credit", "Debit"
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  invoice     Invoice?  @relation(fields: [invoiceId], references: [id])
+  account     Account?  @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId])
+}
+
+enum AccountType {
+  ShareCapital
+  Deposits
+  MerryGoRound
+}
+
+model Member {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  name        String
+  phone       String?
+  email       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  accounts    Account[]
+  loans       Loan[]           @relation("BorrowerLoans")
+  guaranteedLoans LoanGuarantor[]
+
+  @@index([tenantId])
+}
+
+model Account {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @db.Uuid
+  memberId    String        @db.Uuid
+  type        AccountType
+  balance     Decimal       @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  member      Member        @relation(fields: [memberId], references: [id])
+  transactions Transaction[]
+
+  @@index([tenantId])
+  @@index([tenantId, memberId, type])
+}
+
+model Loan {
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @db.Uuid
+  borrowerId    String           @db.Uuid
+  principal     Decimal
+  interestRate  Decimal          // e.g. 0.15 for 15%
+  issuedAt      DateTime
+  dueDate       DateTime?
+  status        String           // "Pending", "Active", "Closed", "Defaulted"
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  tenant        Tenant           @relation(fields: [tenantId], references: [id])
+  borrower      Member           @relation("BorrowerLoans", fields: [borrowerId], references: [id])
+  guarantors    LoanGuarantor[]
+
+  @@index([tenantId])
+}
+
+model LoanGuarantor {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  loanId     String   @db.Uuid
+  memberId   String   @db.Uuid
+  guaranteeAmount Decimal
+
+  tenant     Tenant  @relation(fields: [tenantId], references: [id])
+  loan       Loan    @relation(fields: [loanId], references: [id])
+  member     Member  @relation(fields: [memberId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, loanId, memberId])
+}
+
+model Session {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  name           String
+  meetingDate    DateTime
+  totalCollected Decimal  @default(0)
+  cashAtHand     Decimal  @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
