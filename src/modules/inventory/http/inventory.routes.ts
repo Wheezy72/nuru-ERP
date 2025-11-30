@@ -13,7 +13,7 @@ function getTenantId(req: any): string {
   return tenantId;
 }
 
-router.post('/products', async (req, res, next) =&gt; {
+router.post('/products', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
     const service = new InventoryService(tenantId);
@@ -24,7 +24,7 @@ router.post('/products', async (req, res, next) =&gt; {
   }
 });
 
-router.post('/stock/adjust', async (req, res, next) =&gt; {
+router.post('/stock/adjust', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
     const service = new InventoryService(tenantId);
@@ -35,7 +35,7 @@ router.post('/stock/adjust', async (req, res, next) =&gt; {
   }
 });
 
-router.post('/stock/break-bulk', async (req, res, next) =&gt; {
+router.post('/stock/break-bulk', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
     const service = new InventoryService(tenantId);

@@ -9,7 +9,7 @@ export const queryClient = new QueryClient({
       refetchOnReconnect: true,
     },
     mutations: {
-      onSuccess: () =&gt; {
+      onSuccess: () => {
         // Invalidate everything aggressively after mutations
         queryClient.invalidateQueries();
       },

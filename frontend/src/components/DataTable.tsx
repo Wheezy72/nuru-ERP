@@ -14,8 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
-type DataTableProps&lt;TData, TValue&gt; = {
-  columns: ColumnDef&lt;TData, TValue&gt;[];
+type DataTableProps<TData, TValue> = {
+  columns: ColumnDef<TData, TValue>[];
   data: TData[];
   pageCount: number;
   totalRows: number;
@@ -23,12 +23,12 @@ type DataTableProps&lt;TData, TValue&gt; = {
     pageIndex: number;
     pageSize: number;
   };
-  onStateChange: (state: { pageIndex: number; pageSize: number }) =&gt; void;
+  onStateChange: (state: { pageIndex: number; pageSize: number }) => void;
   isLoading?: boolean;
-  onBulkAction?: (selectedRows: TData[]) =&gt; void;
+  onBulkAction?: (selectedRows: TData[]) => void;
 };
 
-export function DataTable&lt;TData, TValue&gt;(props: DataTableProps&lt;TData, TValue&gt;) {
+export function DataTable<TData, TValue>(props: DataTableProps<TData, TValue>) {
   const {
     columns,
     data,
@@ -40,9 +40,9 @@ export function DataTable&lt;TData, TValue&gt;(props: DataTableProps&lt;TData, T
     onBulkAction,
   } = props;
 
-  const [sorting, setSorting] = React.useState&lt;SortingState&gt;([]);
-  const [columnVisibility, setColumnVisibility] = React.useState&lt;VisibilityState&gt;({});
-  const [rowSelection, setRowSelection] = React.useState&lt;RowSelectionState&gt;({});
+  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
   const table = useReactTable({
     data,
@@ -62,81 +62,80 @@ export function DataTable&lt;TData, TValue&gt;(props: DataTableProps&lt;TData, T
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onPaginationChange: (updater) =&gt; {
-      const next =
-        typeof updater === 'function' ? updater(state) : updater;
+    onPaginationChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(state) : updater;
       onStateChange(next);
     },
   });
 
   const selectedRows = React.useMemo(
-    () =&gt; table.getSelectedRowModel().rows.map((r) =&gt; r.original),
+    () => table.getSelectedRowModel().rows.map((r) => r.original),
     [table, rowSelection]
   );
 
   return (
-    &lt;div className="space-y-4"&gt;
-      &lt;div className="flex items-center justify-between"&gt;
-        &lt;div className="flex items-center gap-2"&gt;
-          &lt;span className="text-sm text-muted-foreground"&gt;
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
             Total: {totalRows.toLocaleString()}
-          &lt;/span&gt;
-        &lt;/div&gt;
-        &lt;div className="flex items-center gap-2"&gt;
-          &lt;span className="text-xs text-muted-foreground"&gt;Columns:&lt;/span&gt;
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Columns:</span>
           {table
             .getAllLeafColumns()
-            .filter((column) =&gt; column.getCanHide())
-            .map((column) =&gt; (
-              &lt;label
+            .filter((column) => column.getCanHide())
+            .map((column) => (
+              <label
                 key={column.id}
                 className="flex items-center gap-1 text-xs text-muted-foreground"
-              &gt;
-                &lt;input
+              >
+                <input
                   type="checkbox"
                   checked={column.getIsVisible()}
-                  onChange={(e) =&gt; column.toggleVisibility(e.target.checked)}
-                /&gt;
+                  onChange={(e) => column.toggleVisibility(e.target.checked)}
+                />
                 {column.id}
-              &lt;/label&gt;
+              </label>
             ))}
-        &lt;/div&gt;
-      &lt;/div&gt;
+        </div>
+      </div>
 
-      &lt;div className="relative rounded-lg bg-background shadow-neo"&gt;
-        &lt;table className="w-full border-collapse text-sm"&gt;
-          &lt;thead className="bg-muted/60"&gt;
-            {table.getHeaderGroups().map((headerGroup) =&gt; (
-              &lt;tr key={headerGroup.id}&gt;
-                {headerGroup.headers.map((header) =&gt; (
-                  &lt;th
+      <div className="relative rounded-lg bg-background shadow-neo">
+        <table className="w-full border-collapse text-sm">
+          <thead className="bg-muted/60">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
                     key={header.id}
                     className="px-3 py-2 text-left text-xs font-medium text-muted-foreground"
-                  &gt;
+                  >
                     {header.isPlaceholder
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
                           header.getContext()
                         )}
-                  &lt;/th&gt;
+                  </th>
                 ))}
-              &lt;/tr&gt;
+              </tr>
             ))}
-          &lt;/thead&gt;
-          &lt;tbody&gt;
+          </thead>
+          <tbody>
             {isLoading ? (
-              &lt;tr&gt;
-                &lt;td
+              <tr>
+                <td
                   colSpan={columns.length}
                   className="px-3 py-6 text-center text-sm text-muted-foreground"
-                &gt;
+                >
                   Loading...
-                &lt;/td&gt;
-              &lt;/tr&gt;
+                </td>
+              </tr>
             ) : table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) =&gt; (
-                &lt;tr
+              table.getRowModel().rows.map((row) => (
+                <tr
                   key={row.id}
                   className={cn(
                     'border-b last:border-none transition-colors',
@@ -144,96 +143,96 @@ export function DataTable&lt;TData, TValue&gt;(props: DataTableProps&lt;TData, T
                       ? 'bg-primary/5'
                       : 'hover:bg-muted/40'
                   )}
-                &gt;
-                  {row.getVisibleCells().map((cell) =&gt; (
-                    &lt;td key={cell.id} className="px-3 py-2"&gt;
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-3 py-2">
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext()
                       )}
-                    &lt;/td&gt;
+                    </td>
                   ))}
-                &lt;/tr&gt;
+                </tr>
               ))
             ) : (
-              &lt;tr&gt;
-                &lt;td
+              <tr>
+                <td
                   colSpan={columns.length}
                   className="px-3 py-6 text-center text-sm text-muted-foreground"
-                &gt;
+                >
                   No results.
-                &lt;/td&gt;
-              &lt;/tr&gt;
+                </td>
+              </tr>
             )}
-          &lt;/tbody&gt;
-        &lt;/table&gt;
+          </tbody>
+        </table>
 
-        {selectedRows.length &gt; 0 &amp;&amp; (
-          &lt;div className="pointer-events-auto fixed inset-x-0 bottom-4 z-20 mx-auto flex max-w-xl items-center justify-between rounded-full bg-card px-4 py-2 shadow-neo"&gt;
-            &lt;div className="flex items-center gap-2"&gt;
-              &lt;Checkbox
+        {selectedRows.length > 0 && (
+          <div className="pointer-events-auto fixed inset-x-0 bottom-4 z-20 mx-auto flex max-w-xl items-center justify-between rounded-full bg-card px-4 py-2 shadow-neo">
+            <div className="flex items-center gap-2">
+              <Checkbox
                 checked={table.getIsAllPageRowsSelected()}
-                onCheckedChange={(value) =&gt;
+                onCheckedChange={(value) =>
                   table.toggleAllPageRowsSelected(!!value)
                 }
-              /&gt;
-              &lt;span className="text-sm"&gt;
+              />
+              <span className="text-sm">
                 {selectedRows.length} selected
-              &lt;/span&gt;
-            &lt;/div&gt;
-            &lt;div className="flex items-center gap-2"&gt;
-              {onBulkAction &amp;&amp; (
-                &lt;Button
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {onBulkAction && (
+                <Button
                   size="sm"
                   variant="default"
-                  onClick={() =&gt; onBulkAction(selectedRows)}
-                &gt;
+                  onClick={() => onBulkAction(selectedRows)}
+                >
                   Apply Bulk Action
-                &lt;/Button&gt;
+                </Button>
               )}
-            &lt;/div&gt;
-          &lt;/div&gt;
+            </div>
+          </div>
         )}
-      &lt;/div&gt;
+      </div>
 
-      &lt;div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"&gt;
-        &lt;div className="flex items-center gap-2"&gt;
-          &lt;Button
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <Button
             size="sm"
             variant="outline"
             disabled={!table.getCanPreviousPage()}
-            onClick={() =&gt; table.previousPage()}
-          &gt;
+            onClick={() => table.previousPage()}
+          >
             Previous
-          &lt;/Button&gt;
-          &lt;Button
+          </Button>
+          <Button
             size="sm"
             variant="outline"
             disabled={!table.getCanNextPage()}
-            onClick={() =&gt; table.nextPage()}
-          &gt;
+            onClick={() => table.nextPage()}
+          >
             Next
-          &lt;/Button&gt;
-        &lt;/div&gt;
-        &lt;div className="flex items-center gap-2"&gt;
-          &lt;span&gt;
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>
             Page {state.pageIndex + 1} of {pageCount}
-          &lt;/span&gt;
-          &lt;select
+          </span>
+          <select
             className="rounded-md border bg-background px-2 py-1"
             value={state.pageSize}
-            onChange={(e) =&gt;
+            onChange={(e) =>
               table.setPageSize(Number(e.target.value))
             }
-          &gt;
-            {[10, 25, 50, 100].map((size) =&gt; (
-              &lt;option key={size} value={size}&gt;
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
                 {size} / page
-              &lt;/option&gt;
+              </option>
             ))}
-          &lt;/select&gt;
-        &lt;/div&gt;
-      &lt;/div&gt;
-    &lt;/div&gt;
+          </select>
+        </div>
+      </div>
+    </div>
   );
 }
