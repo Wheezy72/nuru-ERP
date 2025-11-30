@@ -10,7 +10,7 @@ This README focuses on what you need to configure to run Nuru in a production-li
 - Frontend: React, Vite, Tailwind, TanStack Query
 - Auth: JWT (email/password + optional Google OAuth)
 - Data Isolation: tenantId on all tables, designed for PostgreSQL Row Level Security (RLS)
-- Extras: PWA support via vite-plugin-pwa, transactional email (SMTP), M-Pesa STK Push integration (Daraja sandbox/production)
+- Extras: PWA support via vite-plugin-pwa, WhatsApp notifications, M-Pesa STK Push integration (Daraja sandbox/production)
 
 ## 2. Environment Variables
 
@@ -26,23 +26,6 @@ Required for basic operation:
   - Strong secret key used to sign JWTs.
   - Example: `JWT_SECRET=change_me_to_a_long_random_string`
 
-Recommended for production email delivery:
-
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `MAIL_FROM`
-  - Example:
-    - `SMTP_HOST=smtp.gmail.com`
-    - `SMTP_PORT=587`
-    - `SMTP_USER=your_smtp_user`
-    - `SMTP_PASS=your_smtp_password`
-    - `MAIL_FROM=noreply@nuru.app`
-
-  If any of `SMTP_HOST`, `SMTP_USER`, or `SMTP_PASS` are missing, email sending will be disabled and an error will be logged:
-  `SMTP configuration missing (SMTP_HOST/SMTP_USER/SMTP_PASS). Email sending disabled.`
-
 Google OAuth (backend verification):
 
 - `GOOGLE_CLIENT_ID`
@@ -50,6 +33,16 @@ Google OAuth (backend verification):
   - Used by the backend to verify ID tokens sent from the frontend.
   - If missing, Google login requests will fail with:
     - `Google Client ID not configured`
+
+WhatsApp Business (Cloud API) integration:
+
+- `WHATSAPP_ACCESS_TOKEN`
+  - Access token for the WhatsApp Cloud API.
+- `WHATSAPP_PHONE_NUMBER_ID`
+  - The phone number ID associated with your WhatsApp Business account.
+- When an invoice is posted, Nuru will attempt to send an invoice summary via WhatsApp to the customer’s phone number.
+- If any of these values are missing, WhatsApp notifications will fail with a clear error such as:
+  - `WHATSAPP_ACCESS_TOKEN not configured`
 
 M-Pesa (Daraja) integration:
 
@@ -175,14 +168,10 @@ To enable installable PWA:
 DATABASE_URL=postgresql://user:password@localhost:5432/nuru
 JWT_SECRET=your_long_random_secret
 
-# Optional but recommended for full functionality
-SMTP_HOST=...
-SMTP_PORT=587
-SMTP_USER=...
-SMTP_PASS=...
-MAIL_FROM=noreply@nuru.app
-
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
+
+WHATSAPP_ACCESS_TOKEN=your_whatsapp_cloud_api_token
+WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
 
 MPESA_CONSUMER_KEY=...
 MPESA_CONSUMER_SECRET=...

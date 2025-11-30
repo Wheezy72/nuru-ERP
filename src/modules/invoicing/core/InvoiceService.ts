@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { InventoryService } from '../../inventory/core/InventoryService';
-import { MailService } from '../../../shared/mail/MailService';
+import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 
 export class InvoiceService {
   private tenantId: string;
@@ -172,19 +172,16 @@ export class InvoiceService {
       },
     });
 
-    // Fire-and-forget email notification; failure should not block posting
+    // Fire-and-forget WhatsApp notification; failure should not block posting
     try {
-      const mailService = new MailService();
       const customer = invoice.customer;
-      if (customer?.email) {
-        await mailService.sendInvoice(customer.email, {
+      if (customer?.phone) {
+        const whatsappService = new WhatsAppService(this.tenantId);
+        await whatsappService.sendInvoice(customer.phone, {
           invoiceNo: invoice.invoiceNo,
           issueDate: invoice.issueDate,
           totalAmount: invoice.totalAmount.toString(),
-          customer: {
-            name: customer.name,
-            email: customer.email,
-          },
+          customerName: customer.name,
           items: invoice.items.map((item) => ({
             productName: item.product?.name ?? 'Item',
             quantity: item.quantity.toString(),
@@ -194,9 +191,9 @@ export class InvoiceService {
         });
       }
     } catch (err) {
-      // Log but do not fail posting if email sending fails
+      // Log but do not fail posting if WhatsApp sending fails
       // eslint-disable-next-line no-console
-      console.error('Failed to send invoice email', err);
+      console.error('Failed to send invoice WhatsApp notification', err);
     }
 
     return updated;
