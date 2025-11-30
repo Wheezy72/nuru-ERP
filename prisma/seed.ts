@@ -1,0 +1,463 @@
+import { PrismaClient, UserRole, TaxRate } from '@prisma/client';
+import { faker } from '@faker-js/faker';
+
+const prisma = new PrismaClient();
+
+faker.locale = 'en';
+
+function randomKenyanPhone() {
+  const prefixes = ['0712', '0722', '0733', '0790', '0741'];
+  const prefix = faker.helpers.arrayElement(prefixes);
+  const suffix = faker.string.numeric(6);
+  return `+254${prefix.slice(1)}${suffix}`;
+}
+
+function randomKenyanName() {
+  const firstNames = ['Wanjiku', 'Kamau', 'Otieno', 'Achieng', 'Mwangi', 'Njeri', 'Mutiso', 'Cherono'];
+  const lastNames = ['Mwangi', 'Omondi', 'Atieno', 'Muli', 'Odhiambo', 'Wambui', 'Koech', 'Kiptoo'];
+  return `${faker.helpers.arrayElement(firstNames)} ${faker.helpers.arrayElement(lastNames)}`;
+}
+
+async function createTenants() {
+  const nuru = await prisma.tenant.create({
+    data: {
+      name: 'Nuru Hardware (SME)',
+      code: 'NURU-HW',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+    },
+  });
+
+  const wamama = await prisma.tenant.create({
+    data: {
+      name: 'Wamama Pamoja (Chama)',
+      code: 'WAMAMA-PAMOJA',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+      features: {
+        enableChama: true,
+      },
+    },
+  });
+
+  return { nuru, wamama };
+}
+
+async function createUsers(tenantId: string) {
+  const passwordHash = faker.string.alphanumeric(32); // assume external script sets hashes in real setups
+
+  await prisma.user.createMany({
+    data: [
+      {
+        tenantId,
+        email: `admin+${tenantId}@nuru.app`,
+        name: 'Admin',
+        role: UserRole.ADMIN,
+        passwordHash,
+      },
+      {
+        tenantId,
+        email: `manager+${tenantId}@nuru.app`,
+        name: 'Manager',
+        role: UserRole.MANAGER,
+        passwordHash,
+      },
+      {
+        tenantId,
+        email: `cashier+${tenantId}@nuru.app`,
+        name: 'Cashier',
+        role: UserRole.CASHIER,
+        passwordHash,
+      },
+    ],
+  });
+}
+
+async function seedInventory(tenantId: string) {
+  const unitNames = ['Piece', 'Bottle', 'Litre', 'Kilogram', 'Bag', 'Box'];
+  const units = await Promise.all(
+    unitNames.map((name) =>
+      prisma.unitOfMeasure.create({
+        data: {
+          tenantId,
+          name,
+          category: 'Unit',
+          ratio: 1,
+        },
+      })
+    )
+  );
+
+  const piece = units.find((u) => u.name === 'Piece')!;
+  const bottle = units.find((u) => u.name === 'Bottle')!;
+  const bag = units.find((u) => u.name === 'Bag')!;
+
+  const crate = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Crate',
+      category: 'Unit',
+      ratio: 24,
+      baseUnitId: bottle.id,
+    },
+  });
+
+  const bale = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Bale',
+      category: 'Unit',
+      ratio: 10,
+      baseUnitId: bag.id,
+    },
+  });
+
+  const location = await prisma.location.create({
+    data: {
+      tenantId,
+      name: 'Main Shop',
+      code: 'MAIN',
+      isActive: true,
+    },
+  });
+
+  const productNames = [
+    'Simba Cement 50kg',
+    'Rhino Cement 32.5R',
+    'DAP Fertilizer 50kg',
+    'CAN Fertilizer 50kg',
+    'Panga',
+    'Hammer',
+    'Nails 2 inch Box',
+    'Nails 3 inch Box',
+    'Wheelbarrow',
+    'Paint 20L White',
+    'Paint 20L Cream',
+    'Thinner 5L',
+    'Steel Rod 8mm',
+    'Steel Rod 10mm',
+    'Roofing Sheet Mabati 2m',
+    'Roofing Sheet Mabati 3m',
+    'Binding Wire 25kg',
+    'Plumbing Pipe 1 inch',
+    'Plumbing Pipe 1/2 inch',
+    'Tile Adhesive 20kg',
+    'Cooking Oil 1L',
+    'Cooking Oil 5L',
+    'Sugar 2kg',
+    'Flour 2kg',
+    'Maize Flour 2kg',
+    'Rice 5kg',
+    'Salt 1kg',
+    'Soap Bar 800g',
+    'Detergent Powder 1kg',
+    'Charcoal Bag',
+    'Gas Cylinder 6kg',
+    'Gas Cylinder 13kg',
+    'Chicken Feed 50kg',
+    'Layer Mash 50kg',
+    'Kales Seedlings Tray',
+    'Tomato Seedlings Tray',
+    'Onion Seedlings Tray',
+    'Maize Seed 5kg',
+    'Beans Seed 5kg',
+    'Fencing Post 7ft',
+    'Fencing Wire Roll',
+    'Water Tank 1000L',
+    'Water Tank 5000L',
+    'Wheel Spanner',
+    'Car Jack',
+    'Torch Rechargeable',
+    'Extension Cable 10m',
+    'Extension Cable 20m',
+  ];
+
+  const products = [];
+
+  for (const name of productNames) {
+    const defaultUom =
+      name.includes('Oil 1L') || name.includes('Oil 5L')
+        ? bottle
+        : name.includes('Fertilizer') || name.includes('Flour') || name.includes('Feed')
+        ? bag
+        : piece;
+
+    const product = await prisma.product.create({
+      data: {
+        tenantId,
+        name,
+        sku: faker.string.alphanumeric(8).toUpperCase(),
+        defaultUomId: defaultUom.id,
+        category: name.includes('Fertilizer')
+          ? 'Fertilizer'
+          : name.includes('Cement')
+          ? 'Cement'
+          : name.includes('Oil')
+          ? 'FMCG'
+          : 'General',
+        minStockQuantity: new prisma.$extends({}).Decimal ? undefined : undefined,
+      },
+    });
+
+    products.push(product);
+
+    const initialQty = faker.number.int({ min: 10, max: 200 });
+    await prisma.stockQuant.create({
+      data: {
+        tenantId,
+        productId: product.id,
+        locationId: location.id,
+        uomId: defaultUom.id,
+        quantity: initialQty,
+      },
+    });
+  }
+
+  const specialProducts = await prisma.product.findMany({
+    where: { tenantId, name: { in: ['Cooking Oil 1L', 'Cooking Oil 5L'] } },
+  });
+
+  for (const sp of specialProducts) {
+    await prisma.stockQuant.create({
+      data: {
+        tenantId,
+        productId: sp.id,
+        locationId: location.id,
+        uomId: crate.id,
+        quantity: 5,
+      },
+    });
+  }
+
+  return { products, location, units: { piece, bottle, bag, crate, bale } };
+}
+
+async function seedCustomers(tenantId: string) {
+  const customers = [];
+  for (let i = 0; i < 50; i++) {
+    const name = randomKenyanName();
+    const customer = await prisma.customer.create({
+      data: {
+        tenantId,
+        name,
+        phone: randomKenyanPhone(),
+        email: faker.internet.email({ firstName: name.split(' ')[0] }),
+        kraPin: `A${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+    });
+    customers.push(customer);
+  }
+  return customers;
+}
+
+async function randomTaxRate(): Promise<TaxRate> {
+  const rates: TaxRate[] = [TaxRate.VAT_16, TaxRate.VAT_8, TaxRate.EXEMPT, TaxRate.ZERO];
+  return faker.helpers.arrayElement(rates);
+}
+
+async function seedInvoices(tenantId: string, locationId: string, products: any[], customers: any[]) {
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(now.getMonth() - 3);
+
+  for (let i = 0; i < 500; i++) {
+    const issueDate = faker.date.between({ from: start, to: now });
+    const customer = faker.helpers.arrayElement(customers);
+
+    const lineCount = faker.number.int({ min: 1, max: 5 });
+    const items = [];
+    let total = new prisma.$extends({}).Decimal ? undefined : undefined;
+
+    let subtotal = 0;
+
+    for (let j = 0; j < lineCount; j++) {
+      const product = faker.helpers.arrayElement(products);
+      const quantity = faker.number.int({ min: 1, max: 10 });
+      const unitPrice = faker.number.int({ min: 100, max: 3000 });
+
+      subtotal += quantity * unitPrice;
+
+      items.push({
+        tenantId,
+        productId: product.id,
+        quantity,
+        unitPrice,
+        uomId: product.defaultUomId,
+        lineTotal: quantity * unitPrice,
+        hsCode: faker.string.numeric(6),
+        taxRate: await randomTaxRate(),
+      });
+    }
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        tenantId,
+        customerId: customer.id,
+        invoiceNo: `INV-${faker.string.numeric(6)}`,
+        status: faker.helpers.arrayElement(['Posted', 'Paid']),
+        issueDate,
+        totalAmount: subtotal,
+        items: {
+          create: items,
+        },
+      },
+    });
+
+    for (const item of items) {
+      await prisma.stockQuant.updateMany({
+        where: {
+          tenantId,
+          productId: item.productId,
+          locationId,
+          uomId: item.uomId,
+        },
+        data: {
+          quantity: {
+            decrement: item.quantity,
+          },
+        },
+      });
+
+      await prisma.transaction.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          amount: item.lineTotal,
+          type: 'Credit',
+          reference: `Invoice ${invoice.invoiceNo}`,
+        },
+      });
+    }
+  }
+}
+
+async function seedChama(tenantId: string) {
+  const members = [];
+  for (let i = 0; i < 20; i++) {
+    const name = randomKenyanName();
+    const member = await prisma.member.create({
+      data: {
+        tenantId,
+        name,
+        phone: randomKenyanPhone(),
+        email: faker.internet.email({ firstName: name.split(' ')[0] }),
+      },
+    });
+    members.push(member);
+  }
+
+  await prisma.chamaConstitution.create({
+    data: {
+      tenantId,
+      interestRate: 0.15,
+      lateFineAmount: 200,
+      maxLoanRatio: 2.0,
+    },
+  });
+
+  const accounts = [];
+  for (const member of members) {
+    for (const type of ['ShareCapital', 'Deposits', 'MerryGoRound'] as const) {
+      const account = await prisma.account.create({
+        data: {
+          tenantId,
+          memberId: member.id,
+          type,
+          balance: 0,
+        },
+      });
+      accounts.push(account);
+    }
+  }
+
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(now.getMonth() - 6);
+
+  for (const account of accounts) {
+    const entryCount = faker.number.int({ min: 5, max: 20 });
+    for (let i = 0; i < entryCount; i++) {
+      const date = faker.date.between({ from: start, to: now });
+      const amount = faker.number.int({ min: 200, max: 5000 });
+      await prisma.transaction.create({
+        data: {
+          tenantId,
+          accountId: account.id,
+          amount,
+          type: 'Credit',
+          reference: 'Contribution',
+          createdAt: date,
+        },
+      });
+      await prisma.account.update({
+        where: { id: account.id },
+        data: {
+          balance: {
+            increment: amount,
+          },
+          updatedAt: date,
+        },
+      });
+    }
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const borrower = faker.helpers.arrayElement(members);
+    const principal = faker.number.int({ min: 5000, max: 50000 });
+    const issuedAt = faker.date.between({ from: start, to: now });
+    await prisma.loan.create({
+      data: {
+        tenantId,
+        borrowerId: borrower.id,
+        principal,
+        interestRate: 0.15,
+        issuedAt,
+        status: 'Active',
+      },
+    });
+  }
+}
+
+async function main() {
+  console.log('Seeding database with realistic Kenyan data...');
+
+  await prisma.systemLog.deleteMany({});
+  await prisma.transaction.deleteMany({});
+  await prisma.invoiceItem.deleteMany({});
+  await prisma.invoice.deleteMany({});
+  await prisma.stockQuant.deleteMany({});
+  await prisma.product.deleteMany({});
+  await prisma.location.deleteMany({});
+  await prisma.account.deleteMany({});
+  await prisma.loanGuarantor.deleteMany({});
+  await prisma.loan.deleteMany({});
+  await prisma.member.deleteMany({});
+  await prisma.chamaConstitution.deleteMany({});
+  await prisma.customer.deleteMany({});
+  await prisma.user.deleteMany({});
+  await prisma.tenant.deleteMany({});
+
+  const { nuru, wamama } = await createTenants();
+
+  await createUsers(nuru.id);
+  await createUsers(wamama.id);
+
+  const { products, location } = await seedInventory(nuru.id);
+  const customers = await seedCustomers(nuru.id);
+  await seedInvoices(nuru.id, location.id, products, customers);
+
+  await seedChama(wamama.id);
+
+  console.log('Seeding complete.');
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

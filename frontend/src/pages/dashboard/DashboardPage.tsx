@@ -38,11 +38,18 @@ type StockAlert = {
   uomName: string;
 };
 
+type Insight = {
+  type: 'RISK' | 'WARNING' | 'OPPORTUNITY';
+  title: string;
+  detail: string;
+};
+
 type DashboardSummary = {
   metrics: DashboardMetrics;
   cashFlow: CashFlow;
   chamaTrust: ChamaTrust;
   stockAlerts: StockAlert[];
+  insights: Insight[];
 };
 
 export function DashboardPage() {
@@ -159,6 +166,47 @@ export function DashboardPage() {
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                 {isLoading ? 'Loading...' : 'No transaction data yet.'}
               </div>
+            )}
+          </div>
+        </Card>
+
+        <Card className="md:col-span-2 p-4 flex flex-col">
+          <div className="mb-2 flex items-center justify-between text-sm font-semibold text-foreground">
+            <span>AI Insights</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-[0.65rem] font-semibold text-emerald-700 shadow-sm">
+              ✨
+            </span>
+          </div>
+          <div className="flex-1 space-y-2 overflow-auto text-xs">
+            {isLoading ? (
+              <div className="text-xs text-muted-foreground">Analyzing data...</div>
+            ) : !summary || summary.insights.length === 0 ? (
+              <div className="text-xs text-muted-foreground">
+                No insights yet. Add sales, customers, and stock to unlock intelligence.
+              </div>
+            ) : (
+              summary.insights.slice(0, 3).map((insight, idx) => {
+                let colorClass =
+                  insight.type === 'RISK'
+                    ? 'border-rose-200 bg-rose-50 text-rose-800'
+                    : insight.type === 'WARNING'
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-800';
+
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-md border px-3 py-2 shadow-sm ${colorClass}`}
+                  >
+                    <div className="text-[0.7rem] font-semibold uppercase tracking-wide">
+                      {insight.title}
+                    </div>
+                    <div className="mt-1 text-[0.7rem] leading-snug">
+                      {insight.detail}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </Card>

@@ -20,18 +20,21 @@ export class DashboardService {
   async getSummary(range: DateRange) {
     const prisma = this.prisma;
 
-    const [metrics, cashFlow, chamaTrust, stockAlerts] = await Promise.all([
-      this.getMetrics(prisma, range),
-      this.getCashFlow(prisma, range),
-      this.getChamaTrust(prisma),
-      this.getStockAlerts(prisma),
-    ]);
+    const [metrics, cashFlow, chamaTrust, stockAlerts, insights] =
+      await Promise.all([
+        this.getMetrics(prisma, range),
+        this.getCashFlow(prisma, range),
+        this.getChamaTrust(prisma),
+        this.getStockAlerts(prisma),
+        this.getSmartInsights(prisma),
+      ]);
 
     return {
       metrics,
       cashFlow,
       chamaTrust,
       stockAlerts,
+      insights,
     };
   }
 
@@ -268,5 +271,312 @@ export class DashboardService {
     }
 
     return alerts;
+  }
+
+  /**
+   * Smart AI-like heuristics for actionable insights.
+   * - Churn risk: customers with no purchases in last 30 days.
+   * - Stockout prediction: items likely to run out soon based on average daily sales.
+   * - Dead stock: items with high stock and no sales in 60 days.
+   */
+  private async getSmartInsights(prisma: ReturnType<typeof this['prisma']>) {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 30,
+      0,
+      0,
+      0,
+      0
+    );
+    const sixtyDaysAgo = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 60,
+      0,
+      0,
+      0,
+      0
+    );
+    const ninetyDaysAgo = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 90,
+      0,
+      0,
+      0,
+      0
+    );
+
+    const [churnRisks, stockoutRisks, deadStock] = await Promise.all([
+      this.getChurnRisk(prisma, thirtyDaysAgo),
+      this.getStockoutPrediction(prisma, ninetyDaysAgo),
+      this.getDeadStock(prisma, sixtyDaysAgo),
+    ]);
+
+    const insights: {
+      type: 'RISK' | 'WARNING' | 'OPPORTUNITY';
+      title: string;
+      detail: string;
+    }[] = [];
+
+    if (churnRisks.length > 0) {
+      const top = churnRisks[0];
+      insights.push({
+        type: 'RISK',
+        title: 'Churn Risk',
+        detail: `Customer ${top.name} is at risk of churn (last purchase over 30 days ago).`,
+      });
+    }
+
+    if (stockoutRisks.length > 0) {
+      const top = stockoutRisks[0];
+      insights.push({
+        type: 'WARNING',
+        title: 'Stockout Prediction',
+        detail: `${top.productName} may run out in approximately ${top.daysUntilStockout} day(s).`,
+      });
+    }
+
+    if (deadStock.length > 0) {
+      const top = deadStock[0];
+      insights.push({
+        type: 'OPPORTUNITY',
+        title: 'Dead Stock',
+        detail: `Consider discounting or promoting ${top.productName} to release cash tied up in slow-moving stock.`,
+      });
+    }
+
+    return insights.slice(0, 3);
+  }
+
+  private async getChurnRisk(
+    prisma: ReturnType<typeof this['prisma']>,
+    cutoff: Date
+  ) {
+    const customers = await prisma.customer.findMany({
+      where: { tenantId: this.tenantId },
+      select: {
+        id: true,
+        name: true,
+        invoices: {
+          where: {
+            tenantId: this.tenantId,
+            status: { in: ['Posted', 'Paid'] },
+          },
+          select: {
+            issueDate: true,
+          },
+          orderBy: { issueDate: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    const risks: { id: string; name: string; lastPurchase?: Date }[] = [];
+
+    for (const c of customers) {
+      const lastInvoice = c.invoices[0];
+      if (!lastInvoice) {
+        continue;
+      }
+      if (lastInvoice.issueDate < cutoff) {
+        risks.push({
+          id: c.id,
+          name: c.name,
+          lastPurchase: lastInvoice.issueDate,
+        });
+      }
+    }
+
+    risks.sort((a, b) => {
+      if (!a.lastPurchase || !b.lastPurchase) return 0;
+      return a.lastPurchase.getTime() - b.lastPurchase.getTime();
+    });
+
+    return risks;
+  }
+
+  private async getStockoutPrediction(
+    prisma: ReturnType<typeof this['prisma']>,
+    historyStart: Date
+  ) {
+    const now = new Date();
+
+    const items = await prisma.invoiceItem.findMany({
+      where: {
+        tenantId: this.tenantId,
+        invoice: {
+          status: { in: ['Posted', 'Paid'] },
+          issueDate: { gte: historyStart, lte: now },
+        },
+      },
+      select: {
+        productId: true,
+        quantity: true,
+        invoice: { select: { issueDate: true } },
+        product: { select: { name: true } },
+      },
+    });
+
+    const productMap: Record<
+      string,
+      { name: string; totalQty: Prisma.Decimal; days: Set<string> }
+    > = {};
+
+    for (const item of items) {
+      const key = item.productId;
+      if (!productMap[key]) {
+        productMap[key] = {
+          name: item.product.name,
+          totalQty: new Prisma.Decimal(0),
+          days: new Set<string>(),
+        };
+      }
+      productMap[key].totalQty = productMap[key].totalQty.add(
+        item.quantity as any
+      );
+      const d = item.invoice.issueDate;
+      const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      productMap[key].days.add(dayKey);
+    }
+
+    if (Object.keys(productMap).length === 0) {
+      return [];
+    }
+
+    const activeProducts = await prisma.product.findMany({
+      where: {
+        tenantId: this.tenantId,
+        id: { in: Object.keys(productMap) },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    const stockAgg = await prisma.stockQuant.groupBy({
+      by: ['productId'],
+      where: {
+        tenantId: this.tenantId,
+        productId: { in: activeProducts.map((p) => p.id) },
+      },
+      _sum: { quantity: true },
+    });
+
+    const stockMap: Record<string, Prisma.Decimal> = {};
+    for (const s of stockAgg) {
+      stockMap[s.productId] = s._sum.quantity ?? new Prisma.Decimal(0);
+    }
+
+    const predictions: {
+      productId: string;
+      productName: string;
+      daysUntilStockout: number;
+    }[] = [];
+
+    for (const [productId, stats] of Object.entries(productMap)) {
+      const daysCount = stats.days.size || 1;
+      const avgDaily = stats.totalQty.div(daysCount);
+      const currentStock = stockMap[productId] ?? new Prisma.Decimal(0);
+
+      if (avgDaily.lte(0)) {
+        continue;
+      }
+
+      if (currentStock.lte(0)) {
+        continue;
+      }
+
+      const daysLeft = currentStock.div(avgDaily);
+      const daysNumber = Math.floor(Number(daysLeft.toString()));
+
+      if (daysNumber <= 7) {
+        predictions.push({
+          productId,
+          productName: stats.name,
+          daysUntilStockout: daysNumber,
+        });
+      }
+    }
+
+    predictions.sort(
+      (a, b) => a.daysUntilStockout - b.daysUntilStockout
+    );
+
+    return predictions;
+  }
+
+  private async getDeadStock(
+    prisma: ReturnType<typeof this['prisma']>,
+    cutoff: Date
+  ) {
+    const soldProductIdsRaw = await prisma.invoiceItem.findMany({
+      where: {
+        tenantId: this.tenantId,
+        invoice: {
+          status: { in: ['Posted', 'Paid'] },
+          issueDate: { gte: cutoff },
+        },
+      },
+      select: {
+        productId: true,
+      },
+      distinct: ['productId'],
+    });
+
+    const soldProductIds = new Set(
+      soldProductIdsRaw.map((i) => i.productId)
+    );
+
+    const stockAgg = await prisma.stockQuant.groupBy({
+      by: ['productId'],
+      where: {
+        tenantId: this.tenantId,
+      },
+      _sum: { quantity: true },
+    });
+
+    const candidates = stockAgg.filter((s) => {
+      const qty = s._sum.quantity ?? new Prisma.Decimal(0);
+      return qty.gt(0) && !soldProductIds.has(s.productId);
+    });
+
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    const products = await prisma.product.findMany({
+      where: {
+        tenantId: this.tenantId,
+        id: { in: candidates.map((c) => c.productId) },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    const productNameMap = products.reduce<Record<string, string>>(
+      (acc, p) => {
+        acc[p.id] = p.name;
+        return acc;
+      },
+      {}
+    );
+
+    const result = candidates.map((c) => ({
+      productId: c.productId,
+      productName: productNameMap[c.productId] || 'Product',
+      quantity: Number(
+        (c._sum.quantity ?? new Prisma.Decimal(0)).toString()
+      ),
+    }));
+
+    result.sort((a, b) => b.quantity - a.quantity);
+
+    return result;
   }
 }
