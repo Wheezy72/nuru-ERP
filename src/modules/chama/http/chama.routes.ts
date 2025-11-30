@@ -133,4 +133,35 @@ router.get('/sessions', async (req, res, next) => {
   }
 });
 
+// Constitution
+router.get('/constitution', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new ChamaService(tenantId);
+    const constitution = await service.getConstitution();
+    res.json(constitution);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/constitution', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new ChamaService(tenantId);
+    const user = (req as any).user as { id?: string } | undefined;
+    const updated = await service.upsertConstitution(
+      {
+        interestRate: req.body.interestRate,
+        lateFineAmount: req.body.lateFineAmount,
+        maxLoanRatio: req.body.maxLoanRatio,
+      },
+      user?.id ?? null
+    );
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

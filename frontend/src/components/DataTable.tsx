@@ -184,15 +184,14 @@ export function DataTable<TData, TValue>(props: DataTableProps<TData, TValue>) {
             </div>
             <div className="flex items-center gap-2">
               {onBulkAction && (
-               <<Button
+                <Button
                   size="sm"
                   variant="default"
                   onClick={() => onBulkAction(selectedRows)}
                 >
                   {bulkActionLabel || 'Apply Bulk Action'}
-              </ )Button>
-              new)</}
-}
+                </Button>
+              )}
             </div>
           </div>
         )}

@@ -32,7 +32,7 @@ export class WhatsAppService {
     return value;
   }
 
-  async sendInvoice(toPhone: string, invoice: InvoiceWhatsAppPayload) {
+  private async sendText(toPhone: string, body: string) {
     if (!toPhone) {
       return;
     }
@@ -40,6 +40,26 @@ export class WhatsAppService {
     const token = this.ensureEnv('WHATSAPP_ACCESS_TOKEN');
     const phoneNumberId = this.ensureEnv('WHATSAPP_PHONE_NUMBER_ID');
 
+    await axios.post(
+      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to: toPhone,
+        type: 'text',
+        text: {
+          body,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+
+  async sendInvoice(toPhone: string, invoice: InvoiceWhatsAppPayload) {
     const issueDateStr = invoice.issueDate.toLocaleDateString();
     const linesPreview = invoice.items
       .slice(0, 3)
@@ -71,22 +91,28 @@ export class WhatsAppService {
       .filter(Boolean)
       .join('\n');
 
-    await axios.post(
-      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to: toPhone,
-        type: 'text',
-        text: {
-          body,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    await this.sendText(toPhone, body);
+  }
+
+  async sendConstitutionUpdate(toPhone: string, payload: {
+    interestRate: string;
+    lateFineAmount: string;
+    maxLoanRatio: string;
+  }) {
+    const body = [
+      'Chama constitution updated:',
+      '',
+      `- Interest rate: ${payload.interestRate}`,
+      `- Late fine: ${payload.lateFineAmount}`,
+      `- Max loan ratio: ${payload.maxLoanRatio}`,
+      '',
+      'These rules now apply to new loans.',
+      '',
+      `- Nuru (tenant ${this.tenantId})`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    await this.sendText(toPhone, body);
   }
 }

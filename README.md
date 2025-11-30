@@ -207,7 +207,7 @@ VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
   - `JWT_SECRET`
   - Database credentials
   - M-Pesa keys
-  - SMTP credentials
+  - WhatsApp and Google OAuth credentials
 
 - Use HTTPS in production and keep environment variables out of source control.
 

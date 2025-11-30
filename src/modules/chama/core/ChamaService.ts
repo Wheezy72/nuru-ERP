@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
+import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 
 export class ChamaService {
   private tenantId: string;
@@ -124,7 +125,6 @@ export class ChamaService {
     input: {
       borrowerId: string;
       principal: Prisma.Decimal;
-      interestRate: Prisma.Decimal;
       issuedAt: Date;
       dueDate?: Date;
       guarantors?: { memberId: string; guaranteeAmount: Prisma.Decimal }[];
@@ -134,12 +134,41 @@ export class ChamaService {
     const prisma = this.prisma;
 
     return prisma.$transaction(async (tx) => {
+      const constitution = await tx.chamaConstitution.findFirst({
+        where: { tenantId: this.tenantId },
+      });
+
+      if (!constitution) {
+        throw new Error('Chama constitution is not configured for this tenant');
+      }
+
+      // Enforce maxLoanRatio: principal must not exceed ratio * member contributions.
+      const contributionAccounts = await tx.account.findMany({
+        where: {
+          tenantId: this.tenantId,
+          memberId: input.borrowerId,
+          type: { in: ['ShareCapital', 'Deposits'] as any },
+        },
+      });
+
+      const totalContributions = contributionAccounts.reduce(
+        (acc, account) => acc.add(account.balance),
+        new Prisma.Decimal(0)
+      );
+
+      const maxAllowed = totalContributions.mul(constitution.maxLoanRatio);
+      if (input.principal.gt(maxAllowed)) {
+        throw new Error(
+          'Requested principal exceeds maximum allowed by Chama constitution'
+        );
+      }
+
       const loan = await tx.loan.create({
         data: {
           tenantId: this.tenantId,
           borrowerId: input.borrowerId,
           principal: input.principal,
-          interestRate: input.interestRate,
+          interestRate: constitution.interestRate,
           issuedAt: input.issuedAt,
           dueDate: input.dueDate,
           status: 'Active',
@@ -166,7 +195,8 @@ export class ChamaService {
           metadata: {
             borrowerId: input.borrowerId,
             principal: input.principal,
-            interestRate: input.interestRate,
+            interestRate: constitution.interestRate,
+            maxLoanRatio: constitution.maxLoanRatio,
           },
         },
       });
@@ -250,5 +280,98 @@ export class ChamaService {
       total,
       pageCount: Math.ceil(total / pageSize),
     };
+  }
+
+  async getConstitution() {
+    const prisma = this.prisma;
+    return prisma.chamaConstitution.findFirst({
+      where: { tenantId: this.tenantId },
+    });
+  }
+
+  async upsertConstitution(
+    input: {
+      interestRate: Prisma.Decimal;
+      lateFineAmount: Prisma.Decimal;
+      maxLoanRatio: Prisma.Decimal;
+    },
+    userId?: string | null
+  ) {
+    const prisma = this.prisma;
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.chamaConstitution.findFirst({
+        where: { tenantId: this.tenantId },
+      });
+
+      const updated = existing
+        ? await tx.chamaConstitution.update({
+            where: { id: existing.id },
+            data: {
+              interestRate: input.interestRate,
+              lateFineAmount: input.lateFineAmount,
+              maxLoanRatio: input.maxLoanRatio,
+            },
+          })
+        : await tx.chamaConstitution.create({
+            data: {
+              tenantId: this.tenantId,
+              interestRate: input.interestRate,
+              lateFineAmount: input.lateFineAmount,
+              maxLoanRatio: input.maxLoanRatio,
+            },
+          });
+
+      await tx.systemLog.create({
+        data: {
+          tenantId: this.tenantId,
+          userId: userId ?? null,
+          action: 'CHAMA_CONSTITUTION_CHANGED',
+          entityType: 'ChamaConstitution',
+          entityId: updated.id,
+          metadata: {
+            previous: existing
+              ? {
+                  interestRate: existing.interestRate,
+                  lateFineAmount: existing.lateFineAmount,
+                  maxLoanRatio: existing.maxLoanRatio,
+                }
+              : null,
+            current: {
+              interestRate: updated.interestRate,
+              lateFineAmount: updated.lateFineAmount,
+              maxLoanRatio: updated.maxLoanRatio,
+            },
+          },
+        },
+      });
+
+      // Notify all members with phone numbers via WhatsApp (best-effort).
+      try {
+        const members = await tx.member.findMany({
+          where: { tenantId: this.tenantId, phone: { not: null } },
+        });
+
+        const whatsapp = new WhatsAppService(this.tenantId);
+        const payload = {
+          interestRate: updated.interestRate.toString(),
+          lateFineAmount: updated.lateFineAmount.toString(),
+          maxLoanRatio: updated.maxLoanRatio.toString(),
+        };
+
+        for (const m of members) {
+          if (m.phone) {
+            // Fire-and-forget per member; failures are logged but do not block.
+            // eslint-disable-next-line no-await-in-loop
+            await whatsapp.sendConstitutionUpdate(m.phone, payload);
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send WhatsApp notifications for constitution update', err);
+      }
+
+      return updated;
+    });
   }
 }

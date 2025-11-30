@@ -35,7 +35,11 @@ model Tenant {
   loans          Loan[]
   sessions       Session[]
   systemLogs     SystemLog[]
+  chamaConstitution ChamaConstitution?
+  stockTakes     StockTake[]
+  stockTakeItems StockTakeItem[]
 }
+
 
 enum UserRole {
   ADMIN
@@ -161,6 +165,7 @@ model Customer {
   name      String
   phone     String?
   email     String?
+  kraPin    String?  // KRA PIN for compliance (optional)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -200,6 +205,8 @@ model InvoiceItem {
   unitPrice  Decimal
   uomId      String   @db.Uuid
   lineTotal  Decimal  @default(0)
+  hsCode     String   // HS code for customs/tax classification
+  taxRate    TaxRate  @default(VAT_16)
 
   tenant     Tenant        @relation(fields: [tenantId], references: [id])
   invoice    Invoice       @relation(fields: [invoiceId], references: [id])
@@ -230,6 +237,13 @@ enum AccountType {
   ShareCapital
   Deposits
   MerryGoRound
+}
+
+enum TaxRate {
+  VAT_16
+  VAT_8
+  EXEMPT
+  ZERO
 }
 
 model Member {
@@ -313,6 +327,69 @@ model Session {
   tenant         Tenant   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
+}
+
+model ChamaConstitution {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  interestRate   Decimal  // e.g. 0.15 = 15% interest
+  lateFineAmount Decimal  // absolute fine amount for late payments
+  maxLoanRatio   Decimal  // e.g. 2.0 = 2x contributions
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId])
+}
+
+enum StockTakeStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum StockTakeItemStatus {
+  PENDING
+  COUNTED
+}
+
+model StockTake {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  locationId      String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  status          StockTakeStatus @default(OPEN)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id])
+  createdBy  User     @relation(fields: [createdByUserId], references: [id])
+  items      StockTakeItem[]
+
+  @@index([tenantId])
+}
+
+model StockTakeItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  stockTakeId      String   @db.Uuid
+  productId        String   @db.Uuid
+  expectedQuantity Decimal
+  countedQuantity  Decimal?
+  variance         Decimal?
+  status           StockTakeItemStatus @default(PENDING)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  stockTake  StockTake @relation(fields: [stockTakeId], references: [id])
+  product    Product   @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, stockTakeId])
 }
 
 model SystemLog {

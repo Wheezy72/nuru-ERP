@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 type UnitOfMeasure = {
   id: string;
   name: string;
+  derivedUnits?: { id: string; name: string }[];
 };
 
 type Product = {
@@ -33,7 +34,7 @@ export function ProductsPage() {
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 25 });
   const [search, setSearch] = React.useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['products', pagination, search],
     queryFn: async () => {
       const res = await apiClient.get<ProductListResponse>('/inventory/products', {
@@ -48,6 +49,32 @@ export function ProductsPage() {
     keepPreviousData: true,
   });
 
+  const handleOpenCrate = async (product: Product) => {
+    const defaultUom = product.defaultUom;
+    const child = defaultUom.derivedUnits?.[0];
+
+    if (!child) {
+      return;
+    }
+
+    const locationId = localStorage.getItem('default_location_id');
+    if (!locationId) {
+      alert('Set default_location_id in localStorage before opening crates.');
+      return;
+    }
+
+    await apiClient.post('/inventory/stock/break-bulk', {
+      productId: product.id,
+      locationId,
+      batchId: null,
+      sourceUomId: defaultUom.id,
+      targetUomId: child.id,
+      sourceQuantity: 1,
+    });
+
+    refetch();
+  };
+
   const columns: ColumnDef<Product>[] = [
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'sku', header: 'SKU' },
@@ -60,6 +87,34 @@ export function ProductsPage() {
       accessorKey: 'defaultUom.name',
       header: 'Default UoM',
       cell: ({ row }) => row.original.defaultUom?.name ?? '-',
+    },
+    {
+      id: 'kadogo',
+      header: 'Kadogo',
+      cell: ({ row }) => {
+        const product = row.original;
+        const defaultUom = product.defaultUom;
+        const child = defaultUom.derivedUnits?.[0];
+
+        if (!child) {
+          return (
+            <span className="text-[0.7rem] text-muted-foreground">
+              -
+            </span>
+          );
+        }
+
+        return (
+         <<Button
+            size="sm"
+            variant="outline"
+            className="text-[0.7rem] h-7 px-2"
+            onClick={()eOpenCrate(product)}
+          >
+            Open Crate
+          </Button>
+        );
+      },
     },
     {
       accessorKey: 'isActive',

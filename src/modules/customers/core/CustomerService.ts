@@ -30,6 +30,7 @@ export class CustomerService {
               { name: { contains: params.search, mode: 'insensitive' } },
               { phone: { contains: params.search, mode: 'insensitive' } },
               { email: { contains: params.search, mode: 'insensitive' } },
+              { kraPin: { contains: params.search, mode: 'insensitive' } },
             ],
           }
         : {}),
@@ -58,6 +59,7 @@ export class CustomerService {
     name: string;
     phone?: string;
     email?: string;
+    kraPin?: string;
   }) {
     const prisma = this.prisma;
 
@@ -67,11 +69,12 @@ export class CustomerService {
         name: input.name,
         phone: input.phone,
         email: input.email,
+        kraPin: input.kraPin,
       },
     });
   }
 
-  async updateCustomer(id: string, input: { name?: string; phone?: string; email?: string }) {
+  async updateCustomer(id: string, input: { name?: string; phone?: string; email?: string; kraPin?: string }) {
     const prisma = this.prisma;
 
     return prisma.customer.update({
@@ -80,6 +83,7 @@ export class CustomerService {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.kraPin !== undefined ? { kraPin: input.kraPin } : {}),
       },
     });
   }

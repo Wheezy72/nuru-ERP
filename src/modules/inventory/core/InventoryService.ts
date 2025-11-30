@@ -44,7 +44,11 @@ export class InventoryService {
         take: pageSize,
         orderBy: { createdAt: 'desc' },
         include: {
-          defaultUom: true,
+          defaultUom: {
+            include: {
+              derivedUnits: true,
+            },
+          },
         },
       }),
       prisma.product.count({ where }),
