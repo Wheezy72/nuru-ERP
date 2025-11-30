@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { DashboardService } from '../core/DashboardService';
-import { requireAuth } from '../../../shared/middleware/requireRole';
+import { requireAuth, requireRole } from '../../../shared/middleware/requireRole';
 
 const router = Router();
 
 router.use(requireAuth);
+router.use(requireRole(['ADMIN', 'MANAGER']));
 
 function getTenantId(req: any): string {
   const authUser = (req as any).user as { tenantId?: string } | undefined;

@@ -2,32 +2,92 @@ import * as React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { RoleGuard } from '@/components/RoleGuard';
 import { useTenantFeatures } from '@/hooks/useTenantFeatures';
+
+type Role = 'ADMIN' | 'MANAGER' | 'CASHIER';
 
 type NavItem = {
   label: string;
   path: string;
-  group: 'Overview' | 'Inventory' | 'CRM' | 'Banking' | 'Settings';
+  group: 'Overview' | 'Sales' | 'Inventory' | 'CRM' | 'Banking' | 'Settings';
+  roles?: Role[];
+  featureFlag?: string;
 };
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', path: '/dashboard', group: 'Overview' },
-  { label: 'Products', path: '/inventory/products', group: 'Inventory' },
-  { label: 'Customers', path: '/customers', group: 'CRM' },
-  { label: 'Invoices', path: '/invoices', group: 'CRM' },
-  { label: 'Members', path: '/chama/members', group: 'Banking' },
-  { label: 'Audit Log', path: '/settings/audit-log', group: 'Settings' },
+  {
+    label: 'Dashboard',
+    path: '/dashboard',
+    group: 'Overview',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Point of Sale',
+    path: '/pos',
+    group: 'Sales',
+    roles: ['ADMIN', 'MANAGER', 'CASHIER'],
+  },
+  {
+    label: 'Inventory Lookup',
+    path: '/inventory/lookup',
+    group: 'Inventory',
+    roles: ['ADMIN', 'MANAGER', 'CASHIER'],
+  },
+  {
+    label: 'Products',
+    path: '/inventory/products',
+    group: 'Inventory',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Customers',
+    path: '/customers',
+    group: 'CRM',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Invoices',
+    path: '/invoices',
+    group: 'CRM',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Members',
+    path: '/chama/members',
+    group: 'Banking',
+    roles: ['ADMIN'],
+    featureFlag: 'enableChama',
+  },
+  {
+    label: 'Audit Log',
+    path: '/settings/audit-log',
+    group: 'Settings',
+    roles: ['ADMIN'],
+  },
 ];
 
-const groups: NavItem['group'][] = ['Overview', 'Inventory', 'CRM', 'Banking', 'Settings'];
+const groups: NavItem['group'][] = [
+  'Overview',
+  'Sales',
+  'Inventory',
+  'CRM',
+  'Banking',
+  'Settings',
+];
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = React.useState(false);
   const { data: features } = useTenantFeatures();
+  const [role, setRole] = React.useState<Role | null>(null);
+
+  React.useEffect(() => {
+    const stored = localStorage.getItem('auth_role') as Role | null;
+    setRole(stored);
+  }, []);
+
   const enableChama =
-    features && typeof features.enableChama === 'boolean'
-      ? features.enableChama
+    features && typeof (features as any).enableChama === 'boolean'
+      ? (features as any).enableChama
       : true;
 
   return (
@@ -53,12 +113,19 @@ export function Sidebar() {
 
       <nav className="flex-1 space-y-4 px-2 py-2 text-xs">
         {groups.map((group) => {
-          // Feature-flag Banking
-          if (group === 'Banking' && !enableChama) {
+          const itemsForGroup = navItems.filter((item) => {
+            if (item.group !== group) return false;
+            if (item.featureFlag === 'enableChama' && !enableChama) return false;
+            if (!role) return false;
+            if (item.roles && !item.roles.includes(role)) return false;
+            return true;
+          });
+
+          if (itemsForGroup.length === 0) {
             return null;
           }
 
-          const groupContent = (
+          return (
             <div key={group} className="space-y-1">
               {!collapsed && (
                 <div className="px-2 text-[0.7rem] font-semibold uppercase tracking-wide text-secondary-foreground/70">
@@ -66,37 +133,25 @@ export function Sidebar() {
                 </div>
               )}
               <div className="space-y-1">
-                {navItems
-                  .filter((item) => item.group === group)
-                  .map((item) => (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.8rem] transition-colors',
-                          isActive
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-secondary-foreground hover:bg-secondary/80'
-                        )
-                      }
-                    >
-                      {collapsed ? item.label.charAt(0) : item.label}
-                    </NavLink>
-                  ))}
+                {itemsForGroup.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.8rem] transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-secondary-foreground hover:bg-secondary/80'
+                      )
+                    }
+                  >
+                    {collapsed ? item.label.charAt(0) : item.label}
+                  </NavLink>
+                ))}
               </div>
             </div>
           );
-
-          if (group === 'Banking' || group === 'Settings') {
-            return (
-              <RoleGuard key={group} allowed={['ADMIN']}>
-                {groupContent}
-              </RoleGuard>
-            );
-          }
-
-          return groupContent;
         })}
       </nav>
     </aside>

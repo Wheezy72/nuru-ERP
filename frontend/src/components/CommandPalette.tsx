@@ -15,10 +15,30 @@ type Command = {
 };
 
 const commands: Command[] = [
-  { label: 'Dashboard', path: '/dashboard', group: 'Overview' },
-  { label: 'Inventory: Products', path: '/inventory/products', group: 'Inventory' },
-  { label: 'CRM: Customers', path: '/customers', group: 'CRM' },
-  { label: 'CRM: Invoices', path: '/invoices', group: 'CRM' },
+  {
+    label: 'Dashboard',
+    path: '/dashboard',
+    group: 'Overview',
+    minRole: 'MANAGER',
+  },
+  {
+    label: 'Point of Sale',
+    path: '/pos',
+    group: 'Sales',
+  },
+  {
+    label: 'Inventory: Lookup',
+    path: '/inventory/lookup',
+    group: 'Inventory',
+  },
+  {
+    label: 'Inventory: Products',
+    path: '/inventory/products',
+    group: 'Inventory',
+    minRole: 'MANAGER',
+  },
+  { label: 'CRM: Customers', path: '/customers', group: 'CRM', minRole: 'MANAGER' },
+  { label: 'CRM: Invoices', path: '/invoices', group: 'CRM', minRole: 'MANAGER' },
   {
     label: 'Banking: Members',
     path: '/chama/members',
@@ -59,8 +79,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const filtered = React.useMemo(() => {
     const q = query.toLowerCase();
     return commands.filter((cmd) => {
-      if (cmd.minRole && role && cmd.minRole === 'ADMIN' && role !== 'ADMIN') {
-        return false;
+      if (cmd.minRole && role) {
+        if (cmd.minRole === 'ADMIN' && role !== 'ADMIN') return false;
+        if (cmd.minRole === 'MANAGER' && role === 'CASHIER') return false;
       }
       if (cmd.featureFlag && features) {
         const flagValue = (features as any)[cmd.featureFlag];
