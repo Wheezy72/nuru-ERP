@@ -13,6 +13,31 @@ function getTenantId(req: any): string {
   return tenantId;
 }
 
+// List products with server-side pagination
+router.get('/products', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InventoryService(tenantId);
+    const page = parseInt((req.query.page as string) || '1', 10);
+    const pageSize = parseInt((req.query.pageSize as string) || '25', 10);
+    const search = (req.query.search as string) || undefined;
+    const isActiveParam = req.query.isActive as string | undefined;
+    const isActive =
+      isActiveParam !== undefined ? isActiveParam === 'true' : undefined;
+
+    const result = await service.listProducts({
+      page,
+      pageSize,
+      search,
+      isActive,
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/products', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
+import { InventoryService } from '../../inventory/core/InventoryService';
 
 export class InvoiceService {
   private tenantId: string;

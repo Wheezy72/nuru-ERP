@@ -42,7 +42,8 @@ router.post('/:id/post', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
     const service = new InvoiceService(tenantId);
-    const invoice = await service.postInvoice(req.params.id);
+    const locationId = req.body.locationId as string | undefined;
+    const invoice = await service.postInvoice(req.params.id, locationId || '');
     res.json(invoice);
   } catch (err) {
     next(err);

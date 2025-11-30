@@ -12,6 +12,53 @@ export class InventoryService {
     return createTenantPrismaClient(this.tenantId);
   }
 
+  async listProducts(params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    isActive?: boolean;
+  }) {
+    const prisma = this.prisma;
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 25;
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.ProductWhereInput = {
+      tenantId: this.tenantId,
+      ...(params.isActive !== undefined ? { isActive: params.isActive } : {}),
+      ...(params.search
+        ? {
+            OR: [
+              { name: { contains: params.search, mode: 'insensitive' } },
+              { sku: { contains: params.search, mode: 'insensitive' } },
+              { category: { contains: params.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          defaultUom: true,
+        },
+      }),
+      prisma.product.count({ where }),
+    ]);
+
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      pageCount: Math.ceil(total / pageSize),
+    };
+  }
+
   async createProduct(input: {
     name: string;
     sku: string;
@@ -56,6 +103,11 @@ export class InventoryService {
       });
 
       if (!existing) {
+        // Disallow going negative from an implicit zero balance
+        if ((input.quantityDelta as unknown as Prisma.Decimal).lt(0)) {
+          throw new Error('Insufficient stock');
+        }
+
         return tx.stockQuant.create({
           data: {
             tenantId: this.tenantId,
@@ -71,6 +123,10 @@ export class InventoryService {
       const newQty = (existing.quantity as unknown as Prisma.Decimal).add(
         input.quantityDelta
       );
+
+      if (newQty.lt(0)) {
+        throw new Error('Insufficient stock');
+      }
 
       return tx.stockQuant.update({
         where: { id: existing.id },
