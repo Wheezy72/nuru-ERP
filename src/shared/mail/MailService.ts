@@ -1,0 +1,147 @@
+import nodemailer from 'nodemailer';
+
+type InvoiceEmailCustomer = {
+  name: string;
+  email: string | null;
+};
+
+type InvoiceEmailItem = {
+  productName: string;
+  quantity: string;
+  unitPrice: string;
+  lineTotal: string;
+};
+
+type InvoiceEmailPayload = {
+  invoiceNo: string;
+  issueDate: Date;
+  totalAmount: string;
+  customer: InvoiceEmailCustomer;
+  items: InvoiceEmailItem[];
+};
+
+export class MailService {
+  private transporterPromise: Promise<ReturnType<typeof nodemailer.createTransport>>;
+
+  constructor() {
+    this.transporterPromise = this.createTransporter();
+  }
+
+  private async createTransporter() {
+    const host = process.env.SMTP_HOST;
+    const port = process.env.SMTP_PORT
+      ? parseInt(process.env.SMTP_PORT, 10)
+      : 587;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    if (!host || !user || !pass) {
+      // Fallback: use a stub transport that logs instead of sending
+      return nodemailer.createTransport({
+        jsonTransport: true,
+      });
+    }
+
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: {
+        user,
+        pass,
+      },
+    });
+  }
+
+  async sendInvoice(toEmail: string, invoice: InvoiceEmailPayload) {
+    if (!toEmail) {
+      return;
+    }
+
+    const transporter = await this.transporterPromise;
+
+    const subject = `Invoice ${invoice.invoiceNo}`;
+    const html = this.renderInvoiceHtml(invoice);
+
+    const from = process.env.MAIL_FROM || 'no-reply@nuru.app';
+
+    await transporter.sendMail({
+      from,
+      to: toEmail,
+      subject,
+      html,
+    });
+  }
+
+  private renderInvoiceHtml(invoice: InvoiceEmailPayload): string {
+    const rows = invoice.items
+      .map(
+        (item) => `
+          <tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb;">${item.productName}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${item.quantity}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${item.unitPrice}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${item.lineTotal}</td>
+          </tr>
+        `
+      )
+      .join('');
+
+    const totalRow = `
+      <tr>
+        <td colspan="3" style="padding: 8px 12px; text-align: right; font-weight: 600; border-top: 1px solid #e5e7eb;">
+          Total
+        </td>
+        <td style="padding: 8px 12px; text-align: right; font-weight: 600; border-top: 1px solid #e5e7eb;">
+          ${invoice.totalAmount}
+        </td>
+      </tr>
+    `;
+
+    const issueDateStr = invoice.issueDate.toLocaleDateString();
+
+    return `
+      <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F9F9F8; padding: 24px;">
+        <div style="max-width: 640px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08); overflow: hidden;">
+          <div style="background-color: #16a34a; color: #f9fafb; padding: 16px 20px;">
+            <h1 style="margin: 0; font-size: 18px; font-weight: 600;">Nuru Invoice</h1>
+            <p style="margin: 4px 0 0; font-size: 13px;">Invoice ${invoice.invoiceNo}</p>
+          </div>
+          <div style="padding: 20px;">
+            <p style="margin: 0 0 8px; font-size: 14px; color: #4b5563;">
+              Hello ${invoice.customer.name || 'Customer'},
+            </p>
+            <p style="margin: 0 0 16px; font-size: 14px; color: #4b5563;">
+              Thank you for your business. Here are the details of your invoice.
+            </p>
+
+            <div style="display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 13px; color: #6b7280;">
+              <div>
+                <div><strong>Invoice #:</strong> ${invoice.invoiceNo}</div>
+                <div><strong>Date:</strong> ${issueDateStr}</div>
+              </div>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #111827;">
+              <thead>
+                <tr>
+                  <th style="padding: 8px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; font-weight: 500;">Item</th>
+                  <th style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #e5e7eb; font-weight: 500;">Qty</th>
+                  <th style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #e5e7eb; font-weight: 500;">Price</th>
+                  <th style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #e5e7eb; font-weight: 500;">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}${totalRow}
+              </tbody>
+            </table>
+
+            <p style="margin: 16px 0 0; font-size: 12px; color: #9ca3af;">
+              This email was generated by Nuru. For questions about this invoice, please contact your vendor directly.
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}

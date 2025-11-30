@@ -1,14 +1,21 @@
 import { Router } from 'express';
 import { InventoryService } from '../core/InventoryService';
+import { requireAuth } from '../../../shared/middleware/requireRole';
 
 const router = Router();
 
-// Middleware to extract tenantId from request (e.g. from JWT or header)
+router.use(requireAuth);
+
+// Resolve tenant from authenticated user (preferred) or header (fallback)
 function getTenantId(req: any): string {
-  // For now, read from header. In production, derive from authenticated user.
+  const authUser = (req as any).user as { tenantId?: string } | undefined;
+  if (authUser?.tenantId) {
+    return authUser.tenantId;
+  }
+
   const tenantId = req.headers['x-tenant-id'] as string | undefined;
   if (!tenantId) {
-    throw new Error('Missing x-tenant-id header');
+    throw new Error('Missing tenant context');
   }
   return tenantId;
 }

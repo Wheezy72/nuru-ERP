@@ -9,6 +9,8 @@ import chamaRoutes from './modules/chama/http/chama.routes';
 import systemRoutes from './modules/system/http/system.routes';
 import tenantRoutes from './modules/tenant/http/tenant.routes';
 import dashboardRoutes from './modules/dashboard/http/dashboard.routes';
+import reportingRoutes from './modules/reporting/http/reporting.routes';
+import authRoutes from './modules/auth/http/auth.routes';
 
 const app = express();
 
@@ -16,6 +18,7 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
+app.use('/api/auth', authRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/invoices', invoiceRoutes);
@@ -23,6 +26,7 @@ app.use('/api/chama', chamaRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/tenant', tenantRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/reporting', reportingRoutes);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

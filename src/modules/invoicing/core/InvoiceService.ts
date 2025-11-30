@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { InventoryService } from '../../inventory/core/InventoryService';
+import { MailService } from '../../../shared/mail/MailService';
 
 export class InvoiceService {
   private tenantId: string;
@@ -116,10 +117,17 @@ export class InvoiceService {
 
     const prisma = this.prisma;
 
-    // Load invoice and items first
+    // Load invoice, items and customer first
     const invoice = await prisma.invoice.findFirst({
       where: { id, tenantId: this.tenantId },
-      include: { items: true },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+        customer: true,
+      },
     });
 
     if (!invoice) {
@@ -163,6 +171,33 @@ export class InvoiceService {
         },
       },
     });
+
+    // Fire-and-forget email notification; failure should not block posting
+    try {
+      const mailService = new MailService();
+      const customer = invoice.customer;
+      if (customer?.email) {
+        await mailService.sendInvoice(customer.email, {
+          invoiceNo: invoice.invoiceNo,
+          issueDate: invoice.issueDate,
+          totalAmount: invoice.totalAmount.toString(),
+          customer: {
+            name: customer.name,
+            email: customer.email,
+          },
+          items: invoice.items.map((item) => ({
+            productName: item.product?.name ?? 'Item',
+            quantity: item.quantity.toString(),
+            unitPrice: item.unitPrice.toString(),
+            lineTotal: item.lineTotal.toString(),
+          })),
+        });
+      }
+    } catch (err) {
+      // Log but do not fail posting if email sending fails
+      // eslint-disable-next-line no-console
+      console.error('Failed to send invoice email', err);
+    }
 
     return updated;
   }

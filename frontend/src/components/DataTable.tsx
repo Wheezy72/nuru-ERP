@@ -26,6 +26,7 @@ type DataTableProps<TData, TValue> = {
   onStateChange: (state: { pageIndex: number; pageSize: number }) => void;
   isLoading?: boolean;
   onBulkAction?: (selectedRows: TData[]) => void;
+  bulkActionLabel?: string;
 };
 
 export function DataTable<TData, TValue>(props: DataTableProps<TData, TValue>) {
@@ -38,6 +39,7 @@ export function DataTable<TData, TValue>(props: DataTableProps<TData, TValue>) {
     onStateChange,
     isLoading,
     onBulkAction,
+    bulkActionLabel,
   } = props;
 
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -182,14 +184,15 @@ export function DataTable<TData, TValue>(props: DataTableProps<TData, TValue>) {
             </div>
             <div className="flex items-center gap-2">
               {onBulkAction && (
-                <Button
+               <<Button
                   size="sm"
                   variant="default"
                   onClick={() => onBulkAction(selectedRows)}
                 >
-                  Apply Bulk Action
-                </Button>
-              )}
+                  {bulkActionLabel || 'Apply Bulk Action'}
+              </ )Button>
+              new)</}
+}
             </div>
           </div>
         )}

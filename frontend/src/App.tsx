@@ -7,11 +7,13 @@ import { CustomersPage } from '@/pages/customers/CustomersPage';
 import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
 import { MembersPage } from '@/pages/chama/MembersPage';
 import { AuditLogPage } from '@/pages/settings/AuditLogPage';
+import { LoginPage } from '@/pages/auth/LoginPage';
 
 export function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/login" element={<LoginPage />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />

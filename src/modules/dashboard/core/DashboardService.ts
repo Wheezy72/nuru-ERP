@@ -1,6 +1,11 @@
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
+type DateRange = {
+  startDate?: Date;
+  endDate?: Date;
+};
+
 export class DashboardService {
   private tenantId: string;
 
@@ -12,12 +17,12 @@ export class DashboardService {
     return createTenantPrismaClient(this.tenantId);
   }
 
-  async getSummary() {
+  async getSummary(range: DateRange) {
     const prisma = this.prisma;
 
     const [metrics, cashFlow, chamaTrust, stockAlerts] = await Promise.all([
-      this.getMetrics(prisma),
-      this.getCashFlow(prisma),
+      this.getMetrics(prisma, range),
+      this.getCashFlow(prisma, range),
       this.getChamaTrust(prisma),
       this.getStockAlerts(prisma),
     ]);
@@ -30,34 +35,45 @@ export class DashboardService {
     };
   }
 
-  private async getMetrics(prisma: ReturnType<typeof this['prisma']>) {
-    const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0,
-      0,
-      0,
-      0
-    );
-    const startOfTomorrow = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1,
-      0,
-      0,
-      0,
-      0
-    );
+  private async getMetrics(
+    prisma: ReturnType<typeof this['prisma']>,
+    range: DateRange
+  ) {
+    let start: Date;
+    let end: Date;
+
+    if (range.startDate && range.endDate) {
+      start = range.startDate;
+      end = range.endDate;
+    } else {
+      const now = new Date();
+      start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        0,
+        0,
+        0,
+        0
+      );
+      end = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        0,
+        0,
+        0,
+        0
+      );
+    }
 
     const invoicesAgg = await prisma.invoice.aggregate({
       where: {
         tenantId: this.tenantId,
         status: { in: ['Posted', 'Paid'] },
         issueDate: {
-          gte: startOfDay,
-          lt: startOfTomorrow,
+          gte: start,
+          lt: end,
         },
       },
       _sum: { totalAmount: true },
@@ -79,23 +95,44 @@ export class DashboardService {
     };
   }
 
-  private async getCashFlow(prisma: ReturnType<typeof this['prisma']>) {
-    const now = new Date();
-    const start = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() - 6,
-      0,
-      0,
-      0,
-      0
-    );
+  private async getCashFlow(
+    prisma: ReturnType<typeof this['prisma']>,
+    range: DateRange
+  ) {
+    let start: Date;
+    let end: Date;
+
+    if (range.startDate && range.endDate) {
+      start = range.startDate;
+      end = range.endDate;
+    } else {
+      const now = new Date();
+      start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 6,
+        0,
+        0,
+        0,
+        0
+      );
+      end = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        0,
+        0,
+        0,
+        0
+      );
+    }
 
     const transactions = await prisma.transaction.findMany({
       where: {
         tenantId: this.tenantId,
         createdAt: {
           gte: start,
+          lt: end,
         },
       },
     });
@@ -104,7 +141,18 @@ export class DashboardService {
     const income: number[] = [];
     const expenses: number[] = [];
 
-    for (let i = 0; i < 7; i++) {
+    const dayCount =
+      Math.max(
+        1,
+        Math.min(
+          31,
+          Math.ceil(
+            (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+          )
+        )
+      );
+
+    for (let i = 0; i < dayCount; i++) {
       const d = new Date(
         start.getFullYear(),
         start.getMonth(),

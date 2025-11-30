@@ -34,6 +34,9 @@ export function InvoicesPage() {
   const [search, setSearch] = React.useState('');
   const [status, setStatus] = React.useState<string | undefined>(undefined);
 
+  const [startDate, setStartDate] = React.useState<string>('');
+  const [endDate, setEndDate] = React.useState<string>('');
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['invoices', pagination, search, status],
     queryFn: async () => {
@@ -84,6 +87,29 @@ export function InvoicesPage() {
     refetch();
   };
 
+  const handleExport = async () => {
+    if (!startDate || !endDate) {
+      alert('Select a start and end date before exporting.');
+      return;
+    }
+    const response = await apiClient.get('/reporting/sales', {
+      responseType: 'blob',
+      params: {
+        startDate,
+        endDate,
+      },
+    });
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sales_${startDate}_${endDate}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -110,6 +136,21 @@ export function InvoicesPage() {
             <option value="Posted">Posted</option>
             <option value="Paid">Paid</option>
           </select>
+          <input
+            type="date"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            type="date"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <Button size="sm" variant="outline" onClick={handleExport}>
+            Export Sales CSV
+          </Button>
         </div>
       </div>
       <Card className="p-4">
@@ -129,6 +170,7 @@ export function InvoicesPage() {
             // For simplicity, post the first selected draft
             handlePost(draftIds[0]);
           }}
+          bulkActionLabel="Post Selected Drafts"
         />
       </Card>
     </div>

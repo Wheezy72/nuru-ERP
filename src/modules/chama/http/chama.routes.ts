@@ -1,16 +1,22 @@
 import { Router } from 'express';
 import { ChamaService } from '../core/ChamaService';
-import { requireRole } from '../../../shared/middleware/requireRole';
+import { requireAuth, requireRole } from '../../../shared/middleware/requireRole';
 
 const router = Router();
 
-// All Chama routes require ADMIN role
+// All Chama routes require authenticated ADMIN
+router.use(requireAuth);
 router.use(requireRole(['ADMIN']));
 
 function getTenantId(req: any): string {
+  const authUser = (req as any).user as { tenantId?: string } | undefined;
+  if (authUser?.tenantId) {
+    return authUser.tenantId;
+  }
+
   const tenantId = req.headers['x-tenant-id'] as string | undefined;
   if (!tenantId) {
-    throw new Error('Missing x-tenant-id header');
+    throw new Error('Missing tenant context');
   }
   return tenantId;
 }

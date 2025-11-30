@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/apiClient';
 import { DataTable } from '@/components/DataTable';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 type Member = {
   id: string;
@@ -56,19 +57,49 @@ export function MembersPage() {
 
   const items = data?.items ?? [];
 
+  const exportStatement = async (memberId: string) => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      .toISOString()
+      .slice(0, 10);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      .toISOString()
+      .slice(0, 10);
+
+    const response = await apiClient.get('/reporting/chama/statement', {
+      responseType: 'blob',
+      params: {
+        memberId,
+        startDate: start,
+        endDate: end,
+      },
+    });
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `member_statement_${memberId}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-foreground">Members</h1>
-        <Input
-          placeholder="Search members..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-          }}
-          className="w-64"
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Search members..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+            }}
+            className="w-64"
+          />
+        </div>
       </div>
       <Card className="p-4">
         <DataTable
@@ -80,8 +111,10 @@ export function MembersPage() {
           onStateChange={setPagination}
           isLoading={isLoading}
           onBulkAction={(rows) => {
-            console.log('Bulk member selection', rows);
+            if (!rows.length) return;
+            exportStatement(rows[0].id);
           }}
+          bulkActionLabel="Export Statement"
         />
       </Card>
     </div>

@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/apiClient';
 import { DataTable } from '@/components/DataTable';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 type UnitOfMeasure = {
   id: string;
@@ -74,19 +75,39 @@ export function ProductsPage() {
 
   const items = data?.items ?? [];
 
+  const handleExport = async () => {
+    const response = await apiClient.get('/reporting/inventory', {
+      responseType: 'blob',
+    });
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'inventory.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-foreground">Products</h1>
-        <Input
-          placeholder="Search products..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-          }}
-          className="w-64"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            placeholder="Search products..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+            }}
+            className="w-64"
+          />
+          <Button size="sm" variant="outline" onClick={handleExport}>
+            Export Inventory CSV
+          </Button>
+        </div>
       </div>
       <Card className="p-4">
         <DataTable
@@ -100,6 +121,7 @@ export function ProductsPage() {
           onBulkAction={(rows) => {
             console.log('Bulk product selection', rows);
           }}
+          bulkActionLabel="Apply Bulk Action"
         />
       </Card>
     </div>
