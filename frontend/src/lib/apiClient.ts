@@ -18,5 +18,17 @@ apiClient.interceptors.request.use((config) => {
     config.headers['x-tenant-id'] = tenantId;
   }
 
+  const userRole = localStorage.getItem('auth_role');
+  if (userRole) {
+    config.headers = config.headers || {};
+    config.headers['x-user-role'] = userRole;
+  }
+
+  const userId = localStorage.getItem('auth_user_id');
+  if (userId) {
+    config.headers = config.headers || {};
+    config.headers['x-user-id'] = userId;
+  }
+
   return config;
 });

@@ -18,6 +18,7 @@ model Tenant {
   // Settings / metadata
   locale      String?  // e.g. "en-KE"
   currency    String?  // e.g. "KES"
+  features    Json?    @db.JsonB
 
   // Relations
   users          User[]
@@ -33,6 +34,13 @@ model Tenant {
   accounts       Account[]
   loans          Loan[]
   sessions       Session[]
+  systemLogs     SystemLog[]
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
 }
 
 model User {
@@ -40,11 +48,12 @@ model User {
   email     String   @unique
   name      String?
   tenantId  String   @db.Uuid
-  role      String   // e.g. "owner", "staff"
+  role      UserRole
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  systemLogs SystemLog[]
 
   @@index([tenantId])
 }
@@ -86,22 +95,23 @@ model Location {
 }
 
 model Product {
-  id              String          @id @default(uuid()) @db.Uuid
-  tenantId        String          @db.Uuid
-  name            String
-  sku             String
-  description     String?
-  defaultUomId    String          @db.Uuid
-  category        String?
-  isActive        Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id               String          @id @default(uuid()) @db.Uuid
+  tenantId         String          @db.Uuid
+  name             String
+  sku              String
+  description      String?
+  defaultUomId     String          @db.Uuid
+  category         String?
+  isActive         Boolean         @default(true)
+  minStockQuantity Decimal?        @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  defaultUom      UnitOfMeasure   @relation(fields: [defaultUomId], references: [id])
-  batches         ProductBatch[]
-  stockQuants     StockQuant[]
-  invoiceItems    InvoiceItem[]
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  defaultUom       UnitOfMeasure   @relation(fields: [defaultUomId], references: [id])
+  batches          ProductBatch[]
+  stockQuants      StockQuant[]
+  invoiceItems     InvoiceItem[]
 
   @@index([tenantId])
   @@unique([tenantId, sku])
@@ -302,4 +312,21 @@ model Session {
   tenant         Tenant   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
+}
+
+model SystemLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  userId     String?  @db.Uuid
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, entityType])
 }

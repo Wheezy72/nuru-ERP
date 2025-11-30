@@ -109,28 +109,61 @@ export class InvoiceService {
     });
   }
 
-  async postInvoice(id: string) {
+  async postInvoice(id: string, locationId: string, userId?: string | null) {
+    if (!locationId) {
+      throw new Error('locationId is required to post an invoice');
+    }
+
     const prisma = this.prisma;
 
-    return prisma.$transaction(async (tx) => {
-      const invoice = await tx.invoice.findFirst({
-        where: { id, tenantId: this.tenantId },
-        include: { items: true },
-      });
-
-      if (!invoice) {
-        throw new Error('Invoice not found');
-      }
-      if (invoice.status !== 'Draft') {
-        throw new Error('Only draft invoices can be posted');
-      }
-
-      const updated = await tx.invoice.update({
-        where: { id: invoice.id },
-        data: { status: 'Posted' },
-      });
-
-      return updated;
+    // Load invoice and items first
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, tenantId: this.tenantId },
+      include: { items: true },
     });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+    if (invoice.status !== 'Draft') {
+      throw new Error('Only draft invoices can be posted');
+    }
+
+    // Adjust stock for each invoice item before marking as posted
+    const inventoryService = new InventoryService(this.tenantId);
+
+    for (const item of invoice.items) {
+      await inventoryService.adjustStock({
+        productId: item.productId,
+        locationId,
+        batchId: null,
+        uomId: item.uomId,
+        quantityDelta: (item.quantity as unknown as Prisma.Decimal).mul(
+          new Prisma.Decimal(-1)
+        ),
+      });
+    }
+
+    // If all stock adjustments succeed, mark invoice as posted
+    const updated = await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: 'Posted' },
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        tenantId: this.tenantId,
+        userId: userId ?? null,
+        action: 'INVOICE_POSTED',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        metadata: {
+          locationId,
+          totalAmount: invoice.totalAmount,
+        },
+      },
+    });
+
+    return updated;
   }
 }

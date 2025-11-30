@@ -2,18 +2,36 @@ import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
+import { useTenantFeatures } from '@/hooks/useTenantFeatures';
+
+type Role = 'ADMIN' | 'MANAGER' | 'CASHIER';
 
 type Command = {
   label: string;
   path: string;
   group: string;
+  minRole?: Role;
+  featureFlag?: string;
 };
 
 const commands: Command[] = [
+  { label: 'Dashboard', path: '/dashboard', group: 'Overview' },
   { label: 'Inventory: Products', path: '/inventory/products', group: 'Inventory' },
   { label: 'CRM: Customers', path: '/customers', group: 'CRM' },
   { label: 'CRM: Invoices', path: '/invoices', group: 'CRM' },
-  { label: 'Banking: Members', path: '/chama/members', group: 'Banking' },
+  {
+    label: 'Banking: Members',
+    path: '/chama/members',
+    group: 'Banking',
+    minRole: 'ADMIN',
+    featureFlag: 'enableChama',
+  },
+  {
+    label: 'Settings: Audit Log',
+    path: '/settings/audit-log',
+    group: 'Settings',
+    minRole: 'ADMIN',
+  },
 ];
 
 type CommandPaletteProps = {
@@ -24,6 +42,13 @@ type CommandPaletteProps = {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const [query, setQuery] = React.useState('');
+  const [role, setRole] = React.useState<Role | null>(null);
+  const { data: features } = useTenantFeatures();
+
+  React.useEffect(() => {
+    const stored = localStorage.getItem('auth_role') as Role | null;
+    setRole(stored);
+  }, []);
 
   React.useEffect(() => {
     if (!open) {
@@ -33,11 +58,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const filtered = React.useMemo(() => {
     const q = query.toLowerCase();
-    return commands.filter(
-      (cmd) =>
-        cmd.label.toLowerCase().includes(q) || cmd.group.toLowerCase().includes(q)
-    );
-  }, [query]);
+    return commands.filter((cmd) => {
+      if (cmd.minRole && role && cmd.minRole === 'ADMIN' && role !== 'ADMIN') {
+        return false;
+      }
+      if (cmd.featureFlag && features) {
+        const flagValue = (features as any)[cmd.featureFlag];
+        if (flagValue === false) return false;
+      }
+      return (
+        cmd.label.toLowerCase().includes(q) ||
+        cmd.group.toLowerCase().includes(q)
+      );
+    });
+  }, [query, role, features]);
 
   if (!open) return null;
 

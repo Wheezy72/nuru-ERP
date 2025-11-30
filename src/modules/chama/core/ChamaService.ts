@@ -120,14 +120,17 @@ export class ChamaService {
     });
   }
 
-  async createLoan(input: {
-    borrowerId: string;
-    principal: Prisma.Decimal;
-    interestRate: Prisma.Decimal;
-    issuedAt: Date;
-    dueDate?: Date;
-    guarantors?: { memberId: string; guaranteeAmount: Prisma.Decimal }[];
-  }) {
+  async createLoan(
+    input: {
+      borrowerId: string;
+      principal: Prisma.Decimal;
+      interestRate: Prisma.Decimal;
+      issuedAt: Date;
+      dueDate?: Date;
+      guarantors?: { memberId: string; guaranteeAmount: Prisma.Decimal }[];
+    },
+    userId?: string | null
+  ) {
     const prisma = this.prisma;
 
     return prisma.$transaction(async (tx) => {
@@ -151,6 +154,21 @@ export class ChamaService {
             : undefined,
         },
         include: { guarantors: true },
+      });
+
+      await tx.systemLog.create({
+        data: {
+          tenantId: this.tenantId,
+          userId: userId ?? null,
+          action: 'LOAN_ISSUED',
+          entityType: 'Loan',
+          entityId: loan.id,
+          metadata: {
+            borrowerId: input.borrowerId,
+            principal: input.principal,
+            interestRate: input.interestRate,
+          },
+        },
       });
 
       return loan;

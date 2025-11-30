@@ -43,7 +43,15 @@ router.post('/:id/post', async (req, res, next) => {
     const tenantId = getTenantId(req);
     const service = new InvoiceService(tenantId);
     const locationId = req.body.locationId as string | undefined;
-    const invoice = await service.postInvoice(req.params.id, locationId || '');
+    const userIdHeader = req.headers['x-user-id'];
+    const userId =
+      (Array.isArray(userIdHeader) ? userIdHeader[0] : userIdHeader)?.toString() ||
+      null;
+    const invoice = await service.postInvoice(
+      req.params.id,
+      locationId || '',
+      userId
+    );
     res.json(invoice);
   } catch (err) {
     next(err);

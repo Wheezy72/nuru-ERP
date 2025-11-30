@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { ChamaService } from '../core/ChamaService';
+import { requireRole } from '../../../shared/middleware/requireRole';
 
 const router = Router();
+
+// All Chama routes require ADMIN role
+router.use(requireRole(['ADMIN']));
 
 function getTenantId(req: any): string {
   const tenantId = req.headers['x-tenant-id'] as string | undefined;
@@ -70,8 +74,12 @@ router.post('/accounts/:id/adjust', async (req, res, next) => {
 router.post('/loans', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
+    const userIdHeader = req.headers['x-user-id'];
+    const userId =
+      (Array.isArray(userIdHeader) ? userIdHeader[0] : userIdHeader)?.toString() ||
+      null;
     const service = new ChamaService(tenantId);
-    const loan = await service.createLoan(req.body);
+    const loan = await service.createLoan(req.body, userId);
     res.status(201).json(loan);
   } catch (err) {
     next(err);

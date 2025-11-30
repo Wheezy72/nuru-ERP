@@ -6,6 +6,9 @@ import inventoryRoutes from './modules/inventory/http/inventory.routes';
 import customerRoutes from './modules/customers/http/customer.routes';
 import invoiceRoutes from './modules/invoicing/http/invoice.routes';
 import chamaRoutes from './modules/chama/http/chama.routes';
+import systemRoutes from './modules/system/http/system.routes';
+import tenantRoutes from './modules/tenant/http/tenant.routes';
+import dashboardRoutes from './modules/dashboard/http/dashboard.routes';
 
 const app = express();
 
@@ -17,6 +20,9 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/chama', chamaRoutes);
+app.use('/api/system', systemRoutes);
+app.use('/api/tenant', tenantRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
