@@ -11,6 +11,7 @@ import tenantRoutes from './modules/tenant/http/tenant.routes';
 import dashboardRoutes from './modules/dashboard/http/dashboard.routes';
 import reportingRoutes from './modules/reporting/http/reporting.routes';
 import authRoutes from './modules/auth/http/auth.routes';
+import mpesaRoutes from './modules/payments/http/mpesa.routes';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/system', systemRoutes);
 app.use('/api/tenant', tenantRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reporting', reportingRoutes);
+app.use('/api/payments/mpesa', mpesaRoutes);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

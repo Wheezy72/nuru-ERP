@@ -48,31 +48,64 @@ export function LoginPage() {
 
   const handleGoogleLogin = async () => {
     setGoogleError(null);
+
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setGoogleError('Google Client ID not configured. Set VITE_GOOGLE_CLIENT_ID in your env.');
+      return;
+    }
+
     if (!tenantId) {
       setGoogleError('Enter a Tenant ID before continuing with Google.');
       return;
     }
 
-    // This assumes you have integrated Google Identity Services on the page.
-    // If not configured yet, show a helpful message.
     const anyWindow = window as any;
-    if (!anyWindow.google || !anyWindow.google.accounts) {
+    const google = anyWindow.google?.accounts?.id;
+    if (!google) {
       setGoogleError(
-        'Google sign-in is not configured yet. Add Google Identity Services script to enable this.'
+        'Google Identity Services not loaded. Include the Google script on index.html to enable this.'
       );
       return;
     }
 
-    // In a real setup, you would initialize google.accounts.id and get an ID token.
-    // Here we expect an external callback to provide the token.
-    anyWindow.google.accounts.id.prompt((notification: any) => {
+    google.initialize({
+      client_id: clientId,
+      callback: async (response: { credential?: string }) => {
+        if (!response.credential) {
+          setGoogleError('No Google credential received.');
+          return;
+        }
+        try {
+          const res = await apiClient.post('/auth/google', {
+            idToken: response.credential,
+            tenantId,
+          });
+
+          const { token, user } = res.data as {
+            token: string;
+            user: { id: string; role: string; tenantId: string };
+          };
+
+          localStorage.setItem('auth_token', token);
+          localStorage.setItem('auth_user_id', user.id);
+          localStorage.setItem('auth_role', user.role);
+          localStorage.setItem('tenant_id', user.tenantId);
+
+          navigate('/dashboard');
+        } catch (err: any) {
+          setGoogleError(
+            err?.response?.data?.message || 'Google login failed. Check configuration.'
+          );
+        }
+      },
+    });
+
+    google.prompt((notification: any) => {
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
         setGoogleError('Google sign-in was cancelled or could not be displayed.');
       }
     });
-
-    // Note: The actual ID token handling should be wired via Google Identity callback.
-    // For now, this is a placeholder to show where the handshake occurs.
   };
 
   return (

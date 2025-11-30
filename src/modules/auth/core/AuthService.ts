@@ -3,8 +3,6 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
 export class AuthService {
   private tenantId: string;
 
@@ -36,13 +34,19 @@ export class AuthService {
   }
 
   async loginWithGoogle(idToken: string) {
-    if (!process.env.GOOGLE_CLIENT_ID) {
-      throw new Error('GOOGLE_CLIENT_ID is not configured');
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      // Fail fast with a clear message for misconfiguration
+      // eslint-disable-next-line no-console
+      console.error('Google Client ID not configured');
+      throw new Error('Google Client ID not configured');
     }
+
+    const googleClient = new OAuth2Client(clientId);
 
     const ticket = await googleClient.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: clientId,
     });
 
     const payload = ticket.getPayload();

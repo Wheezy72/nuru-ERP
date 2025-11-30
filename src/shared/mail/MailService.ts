@@ -36,10 +36,9 @@ export class MailService {
     const pass = process.env.SMTP_PASS;
 
     if (!host || !user || !pass) {
-      // Fallback: use a stub transport that logs instead of sending
-      return nodemailer.createTransport({
-        jsonTransport: true,
-      });
+      // eslint-disable-next-line no-console
+      console.error('SMTP configuration missing (SMTP_HOST/SMTP_USER/SMTP_PASS). Email sending disabled.');
+      throw new Error('SMTP configuration missing');
     }
 
     return nodemailer.createTransport({

@@ -50,6 +50,9 @@ router.post('/google', async (req, res, next) => {
     if (err.message === 'Invalid Google token') {
       return res.status(401).json({ message: 'Invalid Google token' });
     }
+    if (err.message === 'Google Client ID not configured') {
+      return res.status(500).json({ message: 'Google Client ID not configured' });
+    }
     next(err);
   }
 });
