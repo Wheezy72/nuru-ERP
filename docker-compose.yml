@@ -16,7 +16,9 @@ services:
   backend:
     image: node:18-alpine
     restart: unless-stopped
-    working_dir: /usr/src/app
+    # The backend code now lives in /backend inside the repo.
+    # We mount the whole repo, but run commands from /usr/src/app/backend.
+    working_dir: /usr/src/app/backend
     depends_on:
       - postgres
     environment:

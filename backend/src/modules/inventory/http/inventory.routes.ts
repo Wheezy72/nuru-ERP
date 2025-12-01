@@ -78,4 +78,34 @@ router.post('/stock/break-bulk', async (req, res, next) => {
   }
 });
 
+// Open Crate / Break Unit for a single product
+router.post('/products/:id/break-unit', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InventoryService(tenantId);
+    const { locationId, quantity, batchId } = req.body as {
+      locationId?: string;
+      quantity?: number;
+      batchId?: string | null;
+    };
+
+    if (!locationId || typeof quantity !== 'number' || quantity <= 0) {
+      return res.status(400).json({
+        message: 'locationId and a positive numeric quantity are required',
+      });
+    }
+
+    const result = await service.breakUnit({
+      productId: req.params.id,
+      locationId,
+      quantity,
+      batchId: batchId ?? null,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

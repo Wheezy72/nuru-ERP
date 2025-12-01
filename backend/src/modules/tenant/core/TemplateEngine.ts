@@ -198,106 +198,102 @@ export class TemplateEngine {
 
   private async applyBlock(block: FeatureBlockId) {
     switch (block) {
-      case 'TOBACCO_COUNTER':
-        return this.applyTobaccoCounter();
-      case 'MICRO_SNACKS':
-        return this.applyMicroSnacks();
-      case 'GAME_LOUNGE':
-        return this.applyGameLounge();
-      case 'DIGITAL_CONTENT':
-        return this.applyDigitalContent();
-      case 'LIQUOR_SHELF':
-        return this.applyLiquorShelf();
+      case 'SINGLES_COUNTER':
+        return this.applySinglesCounter();
+      case 'SNACK_BAR':
+        return this.applySnackBar();
+      case 'GAME_SESSION':
+        return this.applyGameSession();
+      case 'DIGITAL_SERVICE':
+        return this.applyDigitalService();
+      case 'BEVERAGE_SHELF':
+        return this.applyBeverageShelf();
       default:
         return;
     }
   }
 
-  private async applyTobaccoCounter() {
-    const prisma = this.prisma;
+  private async applySinglesCounter() {
     const location = await this.getOrCreateDefaultLocation();
 
-    const packet = await this.getOrCreateUnitOfMeasure({
-      name: 'Packet',
+    const bundle = await this.getOrCreateUnitOfMeasure({
+      name: 'Bundle',
       category: 'Unit',
       ratio: 1,
     });
 
-    const stick = await this.getOrCreateUnitOfMeasure({
-      name: 'Stick',
+    const single = await this.getOrCreateUnitOfMeasure({
+      name: 'Single Item',
       category: 'Unit',
-      ratio: 20, // 1 Packet = 20 Sticks
-      baseUnitName: 'Packet',
+      ratio: 20, // 1 Bundle = 20 Singles (example)
+      baseUnitName: 'Bundle',
     });
 
-    const sportsman = await this.getOrCreateProduct({
-      sku: 'TOB-SPORTS-20',
-      name: 'Sportsman (Packet)',
-      defaultUomId: packet.id,
-      category: 'Tobacco',
+    const bundledItem = await this.getOrCreateProduct({
+      sku: 'SN-BUNDLE-20',
+      name: 'Bundled Item (Pack)',
+      defaultUomId: bundle.id,
+      category: 'Singles',
       minStockQuantity: 10,
     });
 
     await this.ensureStockQuant({
-      productId: sportsman.id,
+      productId: bundledItem.id,
       locationId: location.id,
-      uomId: packet.id,
+      uomId: bundle.id,
       quantity: 200,
     });
 
-    // Ensure stick exists primarily for break-bulk; no stock seeded at stick level.
-    void stick;
+    void single;
   }
 
-  private async applyMicroSnacks() {
-    const prisma = this.prisma;
+  private async applySnackBar() {
     const location = await this.getOrCreateDefaultLocation();
 
-    const packet = await this.getOrCreateUnitOfMeasure({
-      name: 'Packet',
+    const pack = await this.getOrCreateUnitOfMeasure({
+      name: 'Pack',
       category: 'Unit',
       ratio: 1,
     });
 
-    const piece = await this.getOrCreateUnitOfMeasure({
-      name: 'Piece',
+    const unit = await this.getOrCreateUnitOfMeasure({
+      name: 'Unit',
       category: 'Unit',
       ratio: 1,
     });
 
-    const peanuts = await this.getOrCreateProduct({
-      sku: 'SNK-PEANUT-10',
-      name: 'Peanuts (10 Bob Pkt)',
-      defaultUomId: packet.id,
+    const snackPack = await this.getOrCreateProduct({
+      sku: 'SNACK-PACK-SM',
+      name: 'Snack Pack (Small)',
+      defaultUomId: pack.id,
       category: 'Snacks',
       minStockQuantity: 20,
     });
 
-    const smokie = await this.getOrCreateProduct({
-      sku: 'SNK-SMOKIE-1',
-      name: 'Smokie (Piece)',
-      defaultUomId: piece.id,
+    const snackUnit = await this.getOrCreateProduct({
+      sku: 'SNACK-UNIT-1',
+      name: 'Snack Item (Unit)',
+      defaultUomId: unit.id,
       category: 'Snacks',
       minStockQuantity: 20,
     });
 
     await this.ensureStockQuant({
-      productId: peanuts.id,
+      productId: snackPack.id,
       locationId: location.id,
-      uomId: packet.id,
+      uomId: pack.id,
       quantity: 100,
     });
 
     await this.ensureStockQuant({
-      productId: smokie.id,
+      productId: snackUnit.id,
       locationId: location.id,
-      uomId: piece.id,
+      uomId: unit.id,
       quantity: 200,
     });
   }
 
-  private async applyGameLounge() {
-    const prisma = this.prisma;
+  private async applyGameSession() {
     const location = await this.getOrCreateDefaultLocation();
 
     const minute = await this.getOrCreateUnitOfMeasure({
@@ -306,25 +302,23 @@ export class TemplateEngine {
       ratio: 1,
     });
 
-    const fifa = await this.getOrCreateProduct({
-      sku: 'GL-FIFA-10',
-      name: 'FIFA Game (10 Mins)',
+    const gameSession = await this.getOrCreateProduct({
+      sku: 'SRV-GAME-10',
+      name: 'Game Session (10 Mins)',
       defaultUomId: minute.id,
       category: 'Service',
       minStockQuantity: 0,
     });
 
-    // Services are treated as effectively infinite stock to avoid stock errors.
     await this.ensureStockQuant({
-      productId: fifa.id,
+      productId: gameSession.id,
       locationId: location.id,
       uomId: minute.id,
       quantity: 100000,
     });
   }
 
-  private async applyDigitalContent() {
-    const prisma = this.prisma;
+  private async applyDigitalService() {
     const location = await this.getOrCreateDefaultLocation();
 
     const gb = await this.getOrCreateUnitOfMeasure({
@@ -339,90 +333,89 @@ export class TemplateEngine {
       ratio: 1,
     });
 
-    const movieTransfer = await this.getOrCreateProduct({
-      sku: 'DC-MOVIE-GB',
-      name: 'Movie Transfer (Per GB)',
+    const dataTransfer = await this.getOrCreateProduct({
+      sku: 'SRV-DATA-GB',
+      name: 'Data Transfer (Per GB)',
       defaultUomId: gb.id,
       category: 'Digital',
       minStockQuantity: 0,
     });
 
-    const fullSeries = await this.getOrCreateProduct({
-      sku: 'DC-SERIES-FULL',
-      name: 'Full Series',
+    const contentBundle = await this.getOrCreateProduct({
+      sku: 'SRV-CONTENT-BUNDLE',
+      name: 'Content Bundle',
       defaultUomId: service.id,
       category: 'Digital',
       minStockQuantity: 0,
     });
 
     await this.ensureStockQuant({
-      productId: movieTransfer.id,
+      productId: dataTransfer.id,
       locationId: location.id,
       uomId: gb.id,
       quantity: 100000,
     });
 
     await this.ensureStockQuant({
-      productId: fullSeries.id,
+      productId: contentBundle.id,
       locationId: location.id,
       uomId: service.id,
       quantity: 100000,
     });
   }
 
-  private async applyLiquorShelf() {
-    const prisma = this.prisma;
+  private async applyBeverageShelf() {
     const location = await this.getOrCreateDefaultLocation();
 
-    const bottle250 = await this.getOrCreateUnitOfMeasure({
+    const smallBottle = await this.getOrCreateUnitOfMeasure({
       name: 'Bottle 250ml',
       category: 'Volume',
       ratio: 1,
     });
 
-    const bottle500 = await this.getOrCreateUnitOfMeasure({
+    const largeBottle = await this.getOrCreateUnitOfMeasure({
       name: 'Bottle 500ml',
       category: 'Volume',
       ratio: 1,
     });
 
-    const tot = await this.getOrCreateUnitOfMeasure({
-      name: 'Tot',
+    const pour = await this.getOrCreateUnitOfMeasure({
+      name: 'Pour',
       category: 'Volume',
-      ratio: 4, // 1 Bottle = 4 Tots
+      ratio: 4, // 1 small bottle = 4 pours (example)
       baseUnitName: 'Bottle 250ml',
     });
 
-    const chrome = await this.getOrCreateProduct({
-      sku: 'LQ-CHROME-250',
-      name: 'Chrome Vodka 250ml',
-      defaultUomId: bottle250.id,
-      category: 'Liquor',
+    const premiumBeverage = await this.getOrCreateProduct({
+      sku: 'BEV-PREMIUM-250',
+      name: 'Premium Beverage 250ml',
+      defaultUomId: smallBottle.id,
+      category: 'Beverage',
       minStockQuantity: 6,
     });
 
-    const tusker = await this.getOrCreateProduct({
-      sku: 'LQ-TUSKER-500',
-      name: 'Tusker Lager',
-      defaultUomId: bottle500.id,
-      category: 'Beer',
+    const standardBeer = await this.getOrCreateProduct({
+      sku: 'BEV-STANDARD-500',
+      name: 'Standard Beverage 500ml',
+      defaultUomId: largeBottle.id,
+      category: 'Beverage',
       minStockQuantity: 12,
     });
 
     await this.ensureStockQuant({
-      productId: chrome.id,
+      productId: premiumBeverage.id,
       locationId: location.id,
-      uomId: bottle250.id,
+      uomId: smallBottle.id,
       quantity: 24,
     });
 
     await this.ensureStockQuant({
-      productId: tusker.id,
+      productId: standardBeer.id,
       locationId: location.id,
-      uomId: bottle500.id,
+      uomId: largeBottle.id,
       quantity: 48,
     });
 
-    void tot;
+    void pour;
   }
 }

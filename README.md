@@ -195,16 +195,17 @@ VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
 3. Install dependencies and run:
 
 - Backend:
-  - `npm install` (or `pnpm install`) in the backend root.
+  - `cd backend`
+  - `npm install` (or `pnpm install`)
   - Run Prisma migrations: `npx prisma migrate dev`.
   - Seed the database with demo data:
     - `npx ts-node prisma/seed.ts`
   - Start server: `npm run dev` or `npm start`.
 
 - Frontend:
-  - Inside `frontend/`:
-    - `npm install`
-    - `npm run dev` (for development) or `npm run build` then `npm run preview` (for production preview).
+  - `cd frontend`
+  - `npm install`
+  - `npm run dev` (for development) or `npm run build` then `npm run preview` (for production preview).
 
 ## 7. First Run Guide
 
