@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, TaxRate } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
 export class ReportingService {
@@ -87,6 +87,82 @@ export class ReportingService {
     }
 
     return this.toCsv([header, ...rows]);
+  }
+
+  async getTaxDetails(range: { startDate: Date; endDate: Date }) {
+    const prisma = this.prisma;
+
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        tenantId: this.tenantId,
+        status: { in: ['Posted', 'Paid'] },
+        issueDate: {
+          gte: range.startDate,
+          lt: range.endDate,
+        },
+      },
+      include: {
+        items: true,
+      },
+      orderBy: {
+        issueDate: 'asc',
+      },
+    });
+
+    const result = invoices.map((inv) => {
+      let base16 = new Prisma.Decimal(0);
+      let base8 = new Prisma.Decimal(0);
+
+      for (const item of inv.items) {
+        const amount = item.lineTotal as unknown as Prisma.Decimal;
+        const rate = item.taxRate as TaxRate;
+        if (rate === 'VAT_16') {
+          base16 = base16.add(amount);
+        } else if (rate === 'VAT_8') {
+          base8 = base8.add(amount);
+        }
+      }
+
+      const taxable = base16.add(base8);
+      const vat16 = base16.mul(0.16);
+      const vat8 = base8.mul(0.08);
+
+      return {
+        invoiceId: inv.id,
+        invoiceNo: inv.invoiceNo,
+        issueDate: inv.issueDate,
+        taxableAmount: Number(taxable.toString()),
+        vat16: Number(vat16.toString()),
+        vat8: Number(vat8.toString()),
+      };
+    });
+
+    return result;
+  }
+
+  async getTaxCsv(range: { startDate: Date; endDate: Date }) {
+    const rows = await this.getTaxDetails(range);
+
+    const header = [
+      'InvoiceNo',
+      'IssueDate',
+      'TaxableAmount',
+      'VAT16',
+      'VAT8',
+    ];
+
+    const csvRows: string[][] = [
+      header,
+      ...rows.map((row) => [
+        row.invoiceNo,
+        row.issueDate.toISOString(),
+        row.taxableAmount.toString(),
+        row.vat16.toString(),
+        row.vat8.toString(),
+      ]),
+    ];
+
+    return this.toCsv(csvRows);
   }
 
   async getMemberStatementPdf(memberId: string, range: { startDate: Date; endDate: Date }) {

@@ -85,6 +85,97 @@ router.get('/inventory', async (req, res, next) => {
   }
 });
 
+router.get('/tax-details', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new ReportingService(tenantId);
+    const { startDate, endDate } = req.query as {
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const now = new Date();
+    const defaultStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 30,
+      0,
+      0,
+      0,
+      0
+    );
+    const defaultEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0,
+      0,
+      0,
+      0
+    );
+
+    const start = startDate ? new Date(startDate) : defaultStart;
+    const end = endDate ? new Date(endDate) : defaultEnd;
+
+    const items = await service.getTaxDetails({ startDate: start, endDate: end });
+
+    res.json({
+      items,
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/tax-csv', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new ReportingService(tenantId);
+    const { startDate, endDate } = req.query as {
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const now = new Date();
+    const defaultStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 30,
+      0,
+      0,
+      0,
+      0
+    );
+    const defaultEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0,
+      0,
+      0,
+      0
+    );
+
+    const start = startDate ? new Date(startDate) : defaultStart;
+    const end = endDate ? new Date(endDate) : defaultEnd;
+
+    const csv = await service.getTaxCsv({ startDate: start, endDate: end });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="kra_tax_${start
+        .toISOString()
+        .slice(0, 10)}_${end.toISOString().slice(0, 10)}.csv"`
+    );
+    res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/chama/statement', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);

@@ -179,6 +179,9 @@ MPESA_SHORTCODE=...
 MPESA_PASSKEY=...
 MPESA_BASE_URL=https://sandbox.safaricom.co.ke
 MPESA_CALLBACK_URL=https://your-public-host/api/payments/mpesa/callback
+
+# Optional: lock CORS to a specific frontend origin
+FRONTEND_ORIGIN=http://localhost:5173
 ```
 
 2. Set frontend env:
@@ -194,6 +197,8 @@ VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
 - Backend:
   - `npm install` (or `pnpm install`) in the backend root.
   - Run Prisma migrations: `npx prisma migrate dev`.
+  - Seed the database with demo data:
+    - `npx ts-node prisma/seed.ts`
   - Start server: `npm run dev` or `npm start`.
 
 - Frontend:
@@ -201,7 +206,114 @@ VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
     - `npm install`
     - `npm run dev` (for development) or `npm run build` then `npm run preview` (for production preview).
 
-## 7. Production Notes
+## 7. First Run Guide
+
+### 7.1 Default credentials
+
+The seed script creates a default admin user for immediate login:
+
+- Email: `admin@nuru.app`
+- Password: `password123`
+- Tenant: the \"Nuru Hardware (SME)\" tenant
+
+It also creates per-tenant users with the same password:
+
+- `admin+<tenantId>@nuru.app`
+- `manager+<tenantId>@nuru.app`
+- `cashier+<tenantId>@nuru.app`
+
+All of these use the password `password123`.
+
+Because tenant IDs are UUIDs, you need the tenantId to log in. You can fetch this from the database:
+
+```sql
+select id, name, code from "Tenant";
+```
+
+Use the id for the tenant you want when logging in.
+
+### 7.2 Using the seeded tenants
+
+The seed script creates three tenants:
+
+1. `Nuru Hardware (SME)` – retail
+   - Code: `NURU-HW`
+   - Has:
+     - 50+ hardware/FMCG products with realistic stock.
+     - 500+ invoices over the last 3 months.
+     - 50 customers with Kenyan names and KRA PINs.
+   - Good for demonstrating:
+     - Inventory and stock alerts.
+     - Sales and cash flow charts.
+     - AI Insights (churn risk, stockout, dead stock).
+     - Regulator View (VAT liability) based on seeded tax rates.
+
+2. `Wamama Pamoja (Chama)` – savings group
+   - Code: `WAMAMA-PAMOJA`
+   - Has:
+     - 20 members.
+     - 6 months of contributions across ShareCapital, Deposits, MerryGoRound.
+     - 5 active loans.
+   - Good for demonstrating:
+     - Chama dashboard (pot size vs loans issued).
+     - Member statements (PDF via Reporting).
+
+3. `Safari Haulage & Plant Hire` – fleet/service business
+   - Code: `SAFARI-FLEET`
+   - Models a transport and plant hire business.
+   - Inventory (service assets):
+     - `Isuzu FRR (6-Ton) – Lorry Hire` @ ~KES 15,000/day.
+     - `Caterpillar Backhoe – Plant Hire` @ ~KES 35,000/day.
+     - `Toyota Fielder (Uber) – Taxi` @ ~KES 2,500/day.
+     - Units of Measure: `Day` and `Trip`.
+     - Stock is seeded with a very high quantity to represent capacity (\"time\" as inventory).
+   - Customers:
+     - `Mota Construction Ltd` (hires trucks).
+     - `John Kamau (Driver)` (remits daily taxi money).
+   - Transactions:
+     - ~20 invoices over the last ~60 days (e.g., multi-day lorry hires).
+     - Some invoices marked `Paid` with associated `Transaction` entries labelled as M-Pesa remittances.
+   - Chama:
+     - Linked to a Chama constitution and seeded with members/accounts via the same chama seeding logic.
+   - Good for demonstrating:
+     - How Nuru handles a service/fleet vertical (time-based billing).
+     - Cash flow from hire services.
+     - VAT liability on service invoices.
+
+### 7.3 Logging in for the first time
+
+1. Start backend and frontend as above.
+2. Navigate to `http://localhost:5173/login`.
+3. Use:
+
+   - Email: `admin@nuru.app`
+   - Password: `password123`
+
+4. Tenant ID:
+   - Copy the `id` for the `Nuru Hardware (SME)` tenant from your database and paste it into the Tenant ID field on the login form.
+
+Once logged in, you can:
+
+- Go to `/dashboard`:
+  - See AI Insights, Regulator View (VAT), Cash Flow, Chama Trust, and Stock Alerts.
+  - Open the \"Customize\" control to show/hide dashboard cards.
+- Click the \"Regulator View – eTIMS Tax Liability\" card:
+  - Navigates to `/reporting/tax-details`.
+  - Shows a detailed table of invoices contributing to VAT for the current period.
+  - Use \"Download KRA CSV\" to export a CSV built from the same tax logic as the dashboard.
+
+To explore the fleet tenant:
+
+1. Look up the `id` for the `Safari Haulage & Plant Hire` tenant.
+2. Log in using:
+   - Email: `admin+<safariTenantId>@nuru.app`
+   - Password: `password123`
+   - Tenant ID: `<safariTenantId>`
+3. Explore:
+   - Invoices and cash flow specific to fleet/service income.
+   - Chama features linked to the fleet-owned group.
+
+## 8. Production Notes
 
 - Always use strong, unique values for:
   - `JWT_SECRET`

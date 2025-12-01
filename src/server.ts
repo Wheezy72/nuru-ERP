@@ -16,7 +16,13 @@ import stockTakeRoutes from './modules/stocktake/http/stocktake.routes';
 
 const app = express();
 
-app.use(cors());
+const corsOrigin = process.env.FRONTEND_ORIGIN || '*';
+
+app.use(
+  cors({
+    origin: corsOrigin,
+  })
+);
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -30,11 +36,14 @@ app.use('/api/tenant', tenantRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reporting', reportingRoutes);
 app.use('/api/payments/mpesa', mpesaRoutes);
-app.use('/api/stocktakes
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error(err);
-  res.status(500).json({ message: err.message || 'Internal Server Error' });
-});
+app.use('/api/stocktakes', stockTakeRoutes);
+
+app.use(
+  (err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error(err);
+    res.status(500).json({ message: err.message || 'Internal Server Error' });
+  }
+);
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {

@@ -1,5 +1,6 @@
 import { PrismaClient, UserRole, TaxRate } from '@prisma/client';
 import { faker } from '@faker-js/faker';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -42,11 +43,24 @@ async function createTenants() {
     },
   });
 
-  return { nuru, wamama };
+  const safari = await prisma.tenant.create({
+    data: {
+      name: 'Safari Haulage & Plant Hire',
+      code: 'SAFARI-FLEET',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+      features: {
+        enableChama: true,
+      },
+    },
+  });
+
+  return { nuru, wamama, safari };
 }
 
 async function createUsers(tenantId: string) {
-  const passwordHash = faker.string.alphanumeric(32); // assume external script sets hashes in real setups
+  const passwordHash = await bcrypt.hash('password123', 10);
 
   await prisma.user.createMany({
     data: [
@@ -333,6 +347,176 @@ async function seedInvoices(tenantId: string, locationId: string, products: any[
   }
 }
 
+async function createDefaultAdmin(tenantId: string) {
+  const passwordHash = await bcrypt.hash('password123', 10);
+  await prisma.user.create({
+    data: {
+      tenantId,
+      email: 'admin@nuru.app',
+      name: 'Nuru Admin',
+      role: UserRole.ADMIN,
+      passwordHash,
+    },
+  });
+}
+
+async function seedFleetTenant(tenantId: string) {
+  // Service units
+  const day = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Day',
+      category: 'Time',
+      ratio: 1,
+    },
+  });
+
+  const trip = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Trip',
+      category: 'Service',
+      ratio: 1,
+    },
+  });
+
+  const location = await prisma.location.create({
+    data: {
+      tenantId,
+      name: 'Fleet Yard',
+      code: 'FLEET',
+      isActive: true,
+    },
+  });
+
+  const services = [
+    {
+      name: 'Isuzu FRR (6-Ton) – Lorry Hire',
+      defaultUomId: day.id,
+      dailyRate: 15000,
+      category: 'Fleet',
+    },
+    {
+      name: 'Caterpillar Backhoe – Plant Hire',
+      defaultUomId: day.id,
+      dailyRate: 35000,
+      category: 'Plant',
+    },
+    {
+      name: 'Toyota Fielder (Uber) – Taxi',
+      defaultUomId: day.id,
+      dailyRate: 2500,
+      category: 'Taxi',
+    },
+  ];
+
+  const products = [];
+  for (const svc of services) {
+    const product = await prisma.product.create({
+      data: {
+        tenantId,
+        name: svc.name,
+        sku: faker.string.alphanumeric(8).toUpperCase(),
+        defaultUomId: svc.defaultUomId,
+        category: svc.category,
+        minStockQuantity: 0,
+      },
+    });
+    products.push({ product, dailyRate: svc.dailyRate });
+
+    // Treat capacity as effectively \"infinite\" stock for demo purposes.
+    await prisma.stockQuant.create({
+      data: {
+        tenantId,
+        productId: product.id,
+        locationId: location.id,
+        uomId: svc.defaultUomId,
+        quantity: 100000,
+      },
+    });
+  }
+
+  // Fleet customers / drivers
+  const mota = await prisma.customer.create({
+    data: {
+      tenantId,
+      name: 'Mota Construction Ltd',
+      phone: randomKenyanPhone(),
+      email: 'accounts@mota-construction.co.ke',
+      kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+    },
+  });
+
+  const johnKamau = await prisma.customer.create({
+    data: {
+      tenantId,
+      name: 'John Kamau (Driver)',
+      phone: randomKenyanPhone(),
+      email: 'john.kamau@example.com',
+      kraPin: `A${faker.string.alphanumeric(9).toUpperCase()}`,
+    },
+  });
+
+  const fleetCustomers = [mota, johnKamau];
+
+  // Generate about 20 hire invoices over the last 60 days
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(now.getDate() - 60);
+
+  for (let i = 0; i < 20; i++) {
+    const issueDate = faker.date.between({ from: start, to: now });
+    const { product, dailyRate } = faker.helpers.arrayElement(products);
+    const days = faker.number.int({ min: 1, max: 10 });
+    const customer = faker.helpers.arrayElement(fleetCustomers);
+
+    const baseAmount = days * dailyRate;
+
+    const item = {
+      tenantId,
+      productId: product.id,
+      quantity: days,
+      unitPrice: dailyRate,
+      uomId: product.defaultUomId,
+      lineTotal: baseAmount,
+      hsCode: '998721', // generic service code for demonstration
+      taxRate: TaxRate.VAT_16,
+    };
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        tenantId,
+        customerId: customer.id,
+        invoiceNo: `FLEET-${faker.string.numeric(5)}`,
+        status: faker.helpers.arrayElement(['Posted', 'Paid']),
+        issueDate,
+        totalAmount: baseAmount,
+        items: {
+          create: [item],
+        },
+      },
+    });
+
+    // Cash flow via transactions (some mimicking M-Pesa remittances)
+    await prisma.transaction.create({
+      data: {
+        tenantId,
+        invoiceId: invoice.id,
+        amount: baseAmount,
+        type: 'Credit',
+        reference:
+          invoice.status === 'Paid'
+            ? `M-Pesa STK for ${invoice.invoiceNo}`
+            : `Invoice ${invoice.invoiceNo}`,
+        createdAt: issueDate,
+      },
+    });
+  }
+
+  // Link this fleet tenant to a Chama constitution as group-owned
+  await seedChama(tenantId);
+}
+
 async function seedChama(tenantId: string) {
   const members = [];
   for (let i = 0; i < 20; i++) {
@@ -439,16 +623,20 @@ async function main() {
   await prisma.user.deleteMany({});
   await prisma.tenant.deleteMany({});
 
-  const { nuru, wamama } = await createTenants();
+  const { nuru, wamama, safari } = await createTenants();
 
   await createUsers(nuru.id);
   await createUsers(wamama.id);
+  await createUsers(safari.id);
+  await createDefaultAdmin(nuru.id);
 
   const { products, location } = await seedInventory(nuru.id);
   const customers = await seedCustomers(nuru.id);
   await seedInvoices(nuru.id, location.id, products, customers);
 
   await seedChama(wamama.id);
+  // Fleet / service business seed
+  await seedFleetTenant(safari.id);
 
   console.log('Seeding complete.');
 }

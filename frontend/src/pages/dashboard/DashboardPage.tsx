@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { Card } from '@/components/ui/card';
@@ -63,9 +64,13 @@ type DashboardSummary = {
   metrics: DashboardMetrics;
   cashFlow: CashFlow;
   chamaTrust: ChamaTrust;
-  stockAlerts
+  stockAlerts: StockAlert[];
+  insights: Insight[];
+  taxLiability: TaxLiability;
+};
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const [startDate, setStartDate] = React.useState<string>('');
   const [endDate, setEndDate] = React.useState<string>('');
   const [showCustomize, setShowCustomize] = React.useState(false);
@@ -171,6 +176,14 @@ export function DashboardPage() {
 
   const pieColors = ['#16a34a', '#3b82f6'];
 
+  const goToTaxDetails = () => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    const query = params.toString();
+    navigate(`/reporting/tax-details${query ? `?${query}` : ''}`);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -198,63 +211,6 @@ export function DashboardPage() {
           >
             {showCustomize ? 'Hide Layout' : 'Customize'}
           </Button>
-        </div>
-      </div>rt function DashboardPage() {
-  const [startDate, setStartDate] = React.useState<string>('');
-  const [endDate, setEndDate] = React.useState<string>('');
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['dashboardSummary', startDate, endDate],
-    queryFn: async () => {
-      const res = await apiClient.get<DashboardSummary>('/dashboard/summary', {
-        params: {
-          startDate: startDate || undefined,
-          endDate: endDate || undefined,
-        },
-      });
-      return res.data;
-    },
-    staleTime: 60 * 1000,
-  });
-
-  const summary = data;
-
-  const cashFlowData =
-    summary &&
-    summary.cashFlow.days.map((day, idx) => ({
-      day,
-      income: summary.cashFlow.income[idx],
-      expenses: summary.cashFlow.expenses[idx],
-    }));
-
-  const chamaData = summary
-    ? [
-        { name: 'Pot Size', value: summary.chamaTrust.potSize },
-        { name: 'Loans Issued', value: summary.chamaTrust.loansIssued },
-      ]
-    : [];
-
-  const pieColors = ['#16a34a', '#3b82f6'];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-foreground">Overview</h1>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>Period:</span>
-          <input
-            type="date"
-            className="h-8 rounded-md border border-input bg-background px-2"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-          <span>to</span>
-          <input
-            type="date"
-            className="h-8 rounded-md border border-input bg-background px-2"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
         </div>
       </div>
 
@@ -415,9 +371,15 @@ export function DashboardPage() {
         )}
 
         {visibleCards.tax && (
-          <Card className="md:col-span-2 p-4 flex flex-col">
-            <div className="mb-2 text-sm font-semibold text-foreground">
-              Regulator View – eTIMS Tax Liability
+          <Card
+            className="md:col-span-2 p-4 flex flex-col cursor-pointer hover:bg-muted/40 transition-colors"
+            onClick={goToTaxDetails}
+          >
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold text-foreground">
+              <span>Regulator View – eTIMS Tax Liability</span>
+              <span className="text-[0.65rem] text-muted-foreground">
+                View details →
+              </span>
             </div>
             <div className="text-2xl font-semibold text-foreground">
               {isLoading || !summary

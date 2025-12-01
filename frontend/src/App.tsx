@@ -11,6 +11,7 @@ import { AuditLogPage } from '@/pages/settings/AuditLogPage';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { PosPage } from '@/pages/pos/PosPage';
 import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
+import { TaxDetailsPage } from '@/pages/reporting/TaxDetailsPage';
 
 export function App() {
   return (
@@ -26,6 +27,7 @@ export function App() {
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
+          <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />
           <Route path="/settings/audit-log" element={<AuditLogPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
