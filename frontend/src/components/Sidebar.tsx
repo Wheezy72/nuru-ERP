@@ -9,7 +9,7 @@ type Role = 'ADMIN' | 'MANAGER' | 'CASHIER';
 type NavItem = {
   label: string;
   path: string;
-  group: 'Overview' | 'Sales' | 'Inventory' | 'CRM' | 'Banking' | 'Settings';
+  group: 'Overview' | 'Sales' | 'Inventory' | 'CRM' | 'Banking' | 'HR' | 'Settings';
   roles?: Role[];
   featureFlag?: string;
 };
@@ -52,6 +52,12 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
+    label: 'Pay Casuals',
+    path: '/payroll/casuals',
+    group: 'HR',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     label: 'Members',
     path: '/chama/members',
     group: 'Banking',
@@ -71,6 +77,7 @@ const groups: NavItem['group'][] = [
   'Sales',
   'Inventory',
   'CRM',
+  'HR',
   'Banking',
   'Settings',
 ];
@@ -79,6 +86,13 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = React.useState(false);
   const { data: features } = useTenantFeatures();
   const [role, setRole] = React.useState<Role | null>(null);
+
+  const tenantType =
+    features && typeof (features as any).type === 'string'
+      ? ((features as any).type as string)
+      : undefined;
+
+  const isSchool = tenantType === 'SCHOOL';
 
   React.useEffect(() => {
     const stored = localStorage.getItem('auth_role') as Role | null;
@@ -133,22 +147,32 @@ export function Sidebar() {
                 </div>
               )}
               <div className="space-y-1">
-                {itemsForGroup.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.8rem] transition-colors',
-                        isActive
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-secondary-foreground hover:bg-secondary/80'
-                      )
+                {itemsForGroup.map((item) => {
+                  let label = item.label;
+                  if (isSchool) {
+                    if (item.path === '/inventory/products') {
+                      label = 'Fees';
+                    } else if (item.path === '/customers') {
+                      label = 'Students';
                     }
-                  >
-                    {collapsed ? item.label.charAt(0) : item.label}
-                  </NavLink>
-                ))}
+                  }
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.8rem] transition-colors',
+                          isActive
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-secondary-foreground hover:bg-secondary/80'
+                        )
+                      }
+                    >
+                      {collapsed ? label.charAt(0) : label}
+                    </NavLink>
+                  );
+                })}
               </div>
             </div>
           );

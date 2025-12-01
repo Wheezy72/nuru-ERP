@@ -13,6 +13,7 @@ import reportingRoutes from './modules/reporting/http/reporting.routes';
 import authRoutes from './modules/auth/http/auth.routes';
 import mpesaRoutes from './modules/payments/http/mpesa.routes';
 import stockTakeRoutes from './modules/stocktake/http/stocktake.routes';
+import payrollRoutes from './modules/payroll/http/payroll.routes';
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reporting', reportingRoutes);
 app.use('/api/payments/mpesa', mpesaRoutes);
 app.use('/api/stocktakes', stockTakeRoutes);
+app.use('/api/payroll', payrollRoutes);
 
 app.use(
   (err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -3,6 +3,8 @@ import { apiClient } from '@/lib/apiClient';
 
 export type TenantFeatures = {
   enableChama?: boolean;
+  type?: 'SCHOOL' | string;
+  enableRecurringBilling?: boolean;
   [key: string]: unknown;
 };
 

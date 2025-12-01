@@ -12,6 +12,7 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { PosPage } from '@/pages/pos/PosPage';
 import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
 import { TaxDetailsPage } from '@/pages/reporting/TaxDetailsPage';
+import { PayCasualsPage } from '@/pages/hr/PayCasualsPage';
 
 export function App() {
   return (
@@ -26,6 +27,7 @@ export function App() {
           <Route path="/inventory/products" element={<ProductsPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
+          <Route path="/payroll/casuals" element={<PayCasualsPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />
           <Route path="/settings/audit-log" element={<AuditLogPage />} />

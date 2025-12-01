@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, TaxRate } from '@prisma/client';
+import { PrismaClient, UserRole, TaxRate, EmployeeRole } from '@prisma/client';
 import { faker } from '@faker-js/faker';
 import bcrypt from 'bcryptjs';
 
@@ -56,7 +56,21 @@ async function createTenants() {
     },
   });
 
-  return { nuru, wamama, safari };
+  const stMarys = await prisma.tenant.create({
+    data: {
+      name: \"St. Mary's Academy\",
+      code: 'ST-MARYS-ACADEMY',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+      features: {
+        type: 'SCHOOL',
+        enableRecurringBilling: true,
+      },
+    },
+  });
+
+  return { nuru, wamama, safari, stMarys };
 }
 
 async function createUsers(tenantId: string) {
@@ -70,6 +84,7 @@ async function createUsers(tenantId: string) {
         name: 'Admin',
         role: UserRole.ADMIN,
         passwordHash,
+        phone: randomKenyanPhone(),
       },
       {
         tenantId,
@@ -77,6 +92,7 @@ async function createUsers(tenantId: string) {
         name: 'Manager',
         role: UserRole.MANAGER,
         passwordHash,
+        phone: randomKenyanPhone(),
       },
       {
         tenantId,
@@ -84,6 +100,7 @@ async function createUsers(tenantId: string) {
         name: 'Cashier',
         role: UserRole.CASHIER,
         passwordHash,
+        phone: randomKenyanPhone(),
       },
     ],
   });
@@ -356,6 +373,7 @@ async function createDefaultAdmin(tenantId: string) {
       name: 'Nuru Admin',
       role: UserRole.ADMIN,
       passwordHash,
+      phone: randomKenyanPhone(),
     },
   });
 }
@@ -371,7 +389,7 @@ async function seedFleetTenant(tenantId: string) {
     },
   });
 
-  const trip = await prisma.unitOfMeasure.create({
+  await prisma.unitOfMeasure.create({
     data: {
       tenantId,
       name: 'Trip',
@@ -410,7 +428,7 @@ async function seedFleetTenant(tenantId: string) {
     },
   ];
 
-  const products = [];
+  const products: { product: any; dailyRate: number }[] = [];
   for (const svc of services) {
     const product = await prisma.product.create({
       data: {
@@ -424,7 +442,7 @@ async function seedFleetTenant(tenantId: string) {
     });
     products.push({ product, dailyRate: svc.dailyRate });
 
-    // Treat capacity as effectively \"infinite\" stock for demo purposes.
+    // Treat capacity as effectively "infinite" stock for demo purposes.
     await prisma.stockQuant.create({
       data: {
         tenantId,
@@ -435,6 +453,33 @@ async function seedFleetTenant(tenantId: string) {
       },
     });
   }
+
+  // Fleet employees (casuals) for payroll demo
+  await prisma.employee.createMany({
+    data: [
+      {
+        tenantId,
+        name: 'Peter Odhiambo (Turnboy)',
+        phone: randomKenyanPhone(),
+        dailyRate: 800,
+        role: EmployeeRole.CASUAL,
+      },
+      {
+        tenantId,
+        name: 'Grace Wanjiru (Loader)',
+        phone: randomKenyanPhone(),
+        dailyRate: 900,
+        role: EmployeeRole.CASUAL,
+      },
+      {
+        tenantId,
+        name: 'James Kiptoo (Driver)',
+        phone: randomKenyanPhone(),
+        dailyRate: 1500,
+        role: EmployeeRole.PERMANENT,
+      },
+    ],
+  });
 
   // Fleet customers / drivers
   const mota = await prisma.customer.create({
@@ -515,6 +560,90 @@ async function seedFleetTenant(tenantId: string) {
 
   // Link this fleet tenant to a Chama constitution as group-owned
   await seedChama(tenantId);
+}
+
+async function seedSchoolTenant(tenantId: string) {
+  // School-specific units
+  const term = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Term',
+      category: 'Time',
+      ratio: 1,
+    },
+  });
+
+  const location = await prisma.location.create({
+    data: {
+      tenantId,
+      name: 'School Office',
+      code: 'SCH-OFFICE',
+      isActive: true,
+    },
+  });
+
+  // Fee products
+  const feeProducts = await Promise.all([
+    prisma.product.create({
+      data: {
+        tenantId,
+        name: 'Term 1 Tuition',
+        sku: 'TERM1-FEE',
+        defaultUomId: term.id,
+        category: 'Fees',
+        minStockQuantity: 0,
+      },
+    }),
+    prisma.product.create({
+      data: {
+        tenantId,
+        name: 'Term 2 Tuition',
+        sku: 'TERM2-FEE',
+        defaultUomId: term.id,
+        category: 'Fees',
+        minStockQuantity: 0,
+      },
+    }),
+    prisma.product.create({
+      data: {
+        tenantId,
+        name: 'Term 3 Tuition',
+        sku: 'TERM3-FEE',
+        defaultUomId: term.id,
+        category: 'Fees',
+        minStockQuantity: 0,
+      },
+    }),
+  ]);
+
+  // Minimal stock rows to satisfy inventory assumptions (fees as services)
+  for (const p of feeProducts) {
+    await prisma.stockQuant.create({
+      data: {
+        tenantId,
+        productId: p.id,
+        locationId: location.id,
+        uomId: term.id,
+        quantity: 100000,
+      },
+    });
+  }
+
+  // Students as customers
+  const classes = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4'];
+  for (let i = 0; i < 40; i++) {
+    const name = randomKenyanName();
+    const klass = faker.helpers.arrayElement(classes);
+    await prisma.customer.create({
+      data: {
+        tenantId,
+        name: `${name} (${klass})`,
+        phone: randomKenyanPhone(),
+        email: faker.internet.email({ firstName: name.split(' ')[0] }),
+        kraPin: null,
+      },
+    });
+  }
 }
 
 async function seedChama(tenantId: string) {
@@ -608,6 +737,7 @@ async function main() {
   console.log('Seeding database with realistic Kenyan data...');
 
   await prisma.systemLog.deleteMany({});
+  await prisma.passwordResetToken.deleteMany({});
   await prisma.transaction.deleteMany({});
   await prisma.invoiceItem.deleteMany({});
   await prisma.invoice.deleteMany({});
@@ -620,14 +750,16 @@ async function main() {
   await prisma.member.deleteMany({});
   await prisma.chamaConstitution.deleteMany({});
   await prisma.customer.deleteMany({});
+  await prisma.employee.deleteMany({});
   await prisma.user.deleteMany({});
   await prisma.tenant.deleteMany({});
 
-  const { nuru, wamama, safari } = await createTenants();
+  const { nuru, wamama, safari, stMarys } = await createTenants();
 
   await createUsers(nuru.id);
   await createUsers(wamama.id);
   await createUsers(safari.id);
+  await createUsers(stMarys.id);
   await createDefaultAdmin(nuru.id);
 
   const { products, location } = await seedInventory(nuru.id);
@@ -637,6 +769,8 @@ async function main() {
   await seedChama(wamama.id);
   // Fleet / service business seed
   await seedFleetTenant(safari.id);
+  // School tenant seed
+  await seedSchoolTenant(stMarys.id);
 
   console.log('Seeding complete.');
 }

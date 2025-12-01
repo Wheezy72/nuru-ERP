@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/apiClient';
 import { DataTable } from '@/components/DataTable';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useTenantFeatures } from '@/hooks/useTenantFeatures';
 
 type Customer = {
   id: string;
@@ -24,6 +25,13 @@ type CustomerListResponse = {
 export function CustomersPage() {
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 25 });
   const [search, setSearch] = React.useState('');
+  const { data: features } = useTenantFeatures();
+
+  const tenantType =
+    features && typeof (features as any).type === 'string'
+      ? ((features as any).type as string)
+      : undefined;
+  const isSchool = tenantType === 'SCHOOL';
 
   const { data, isLoading } = useQuery({
     queryKey: ['customers', pagination, search],
@@ -56,12 +64,15 @@ export function CustomersPage() {
 
   const items = data?.items ?? [];
 
+  const title = isSchool ? 'Students' : 'Customers';
+  const placeholder = isSchool ? 'Search students...' : 'Search customers...';
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-foreground">Customers</h1>
+        <h1 className="text-lg font-semibold text-foreground">{title}</h1>
         <Input
-          placeholder="Search customers..."
+          placeholder={placeholder}
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);

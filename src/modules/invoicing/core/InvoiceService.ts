@@ -286,4 +286,83 @@ export class InvoiceService {
       })),
     };
   }
+
+  /**
+   * Bulk-generate draft invoices for all students (customers) for a given fee product.
+   * Intended for SCHOOL tenants using recurring term fees.
+   */
+  async bulkGenerateForAllCustomers(input: {
+    productId: string;
+    unitPrice: number;
+    issueDate: Date;
+  }) {
+    const prisma = this.prisma;
+
+    const product = await prisma.product.findFirst({
+      where: {
+        tenantId: this.tenantId,
+        OR: [
+          { id: input.productId },
+          { sku: input.productId },
+          { name: input.productId },
+        ],
+      },
+    });
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    const customers = await prisma.customer.findMany({
+      where: {
+        tenantId: this.tenantId,
+      },
+    });
+
+    if (customers.length === 0) {
+      return { created: 0 };
+    }
+
+    const unitPriceDecimal = new Prisma.Decimal(input.unitPrice);
+    const qty = new Prisma.Decimal(1);
+
+    await prisma.$transaction(async (tx) => {
+      for (const customer of customers) {
+        const invoiceNo = `SCH-${Date.now()}-${Math.floor(
+          Math.random() * 10000
+        )
+          .toString()
+          .padStart(4, '0')}`;
+
+        const lineTotal = qty.mul(unitPriceDecimal);
+
+        await tx.invoice.create({
+          data: {
+            tenantId: this.tenantId,
+            customerId: customer.id,
+            invoiceNo,
+            status: 'Draft',
+            issueDate: input.issueDate,
+            totalAmount: lineTotal,
+            items: {
+              create: [
+                {
+                  tenantId: this.tenantId,
+                  productId: product.id,
+                  quantity: qty,
+                  unitPrice: unitPriceDecimal,
+                  uomId: product.defaultUomId,
+                  lineTotal,
+                  hsCode: '999999',
+                  taxRate: TaxRate.VAT_16,
+                },
+              ],
+            },
+          },
+        });
+      }
+    });
+
+    return { created: customers.length };
+  }
 }

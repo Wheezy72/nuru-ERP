@@ -59,6 +59,20 @@ export class WhatsAppService {
     );
   }
 
+  async sendPasswordResetCode(toPhone: string, code: string) {
+    const body = [
+      'Nuru password reset',
+      '',
+      `Your Nuru reset code is ${code}.`,
+      '',
+      'If you did not request this, you can ignore this message.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    await this.sendText(toPhone, body);
+  }
+
   async sendInvoice(toPhone: string, invoice: InvoiceWhatsAppPayload) {
     const issueDateStr = invoice.issueDate.toLocaleDateString();
     const linesPreview = invoice.items

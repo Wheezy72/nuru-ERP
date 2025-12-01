@@ -17,6 +17,16 @@ export class DashboardService {
     return createTenantPrismaClient(this.tenantId);
   }
 
+  private toEAT(date: Date) {
+    const offsetMs = 3 * 60 * 60 * 1000;
+    return new Date(date.getTime() + offsetMs);
+  }
+
+  private fromEAT(date: Date) {
+    const offsetMs = 3 * 60 * 60 * 1000;
+    return new Date(date.getTime() - offsetMs);
+  }
+
   async getSummary(range: DateRange) {
     const prisma = this.prisma;
 
@@ -38,7 +48,14 @@ export class DashboardService {
 
     return {
       metrics,
-     
+      cashFlow,
+      chamaTrust,
+      stockAlerts,
+      insights,
+      taxLiability,
+    };
+  }
+
   private async getMetrics(
     prisma: ReturnType<typeof this['prisma']>,
     range: DateRange
@@ -50,25 +67,34 @@ export class DashboardService {
       start = range.startDate;
       end = range.endDate;
     } else {
-      const now = new Date();
-      start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        0,
-        0,
-        0,
-        0
+      const nowUtc = new Date();
+      const eatNow = this.toEAT(nowUtc);
+
+      const eatStart = new Date(
+        Date.UTC(
+          eatNow.getUTCFullYear(),
+          eatNow.getUTCMonth(),
+          eatNow.getUTCDate(),
+          0,
+          0,
+          0,
+          0
+        )
       );
-      end = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() + 1,
-        0,
-        0,
-        0,
-        0
+      const eatEnd = new Date(
+        Date.UTC(
+          eatNow.getUTCFullYear(),
+          eatNow.getUTCMonth(),
+          eatNow.getUTCDate() + 1,
+          0,
+          0,
+          0,
+          0
+        )
       );
+
+      start = this.fromEAT(eatStart);
+      end = this.fromEAT(eatEnd);
     }
 
     const invoicesAgg = await prisma.invoice.aggregate({
@@ -110,25 +136,34 @@ export class DashboardService {
       start = range.startDate;
       end = range.endDate;
     } else {
-      const now = new Date();
-      start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() - 6,
-        0,
-        0,
-        0,
-        0
+      const nowUtc = new Date();
+      const eatNow = this.toEAT(nowUtc);
+
+      const eatEnd = new Date(
+        Date.UTC(
+          eatNow.getUTCFullYear(),
+          eatNow.getUTCMonth(),
+          eatNow.getUTCDate() + 1,
+          0,
+          0,
+          0,
+          0
+        )
       );
-      end = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() + 1,
-        0,
-        0,
-        0,
-        0
+      const eatStart = new Date(
+        Date.UTC(
+          eatNow.getUTCFullYear(),
+          eatNow.getUTCMonth(),
+          eatNow.getUTCDate() - 6,
+          0,
+          0,
+          0,
+          0
+        )
       );
+
+      start = this.fromEAT(eatStart);
+      end = this.fromEAT(eatEnd);
     }
 
     const transactions = await prisma.transaction.findMany({
@@ -141,58 +176,76 @@ export class DashboardService {
       },
     });
 
+    const buckets: {
+      [key: string]: { label: string; income: Prisma.Decimal; expenses: Prisma.Decimal };
+    } = {};
+
+    for (const tx of transactions) {
+      const eat = this.toEAT(tx.createdAt);
+      const y = eat.getUTCFullYear();
+      const m = eat.getUTCMonth();
+      const d = eat.getUTCDate();
+      const key = `${y}-${m}-${d}`;
+      const label = `${m + 1}/${d}`;
+
+      if (!buckets[key]) {
+        buckets[key] = {
+          label,
+          income: new Prisma.Decimal(0),
+          expenses: new Prisma.Decimal(0),
+        };
+      }
+
+      if (tx.type === 'Credit') {
+        buckets[key].income = buckets[key].income.add(
+          tx.amount as unknown as Prisma.Decimal
+        );
+      } else if (tx.type === 'Debit') {
+        buckets[key].expenses = buckets[key].expenses.add(
+          tx.amount as unknown as Prisma.Decimal
+        );
+      }
+    }
+
+    const dayCount = Math.max(
+      1,
+      Math.min(
+        31,
+        Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+      )
+    );
+
     const days: string[] = [];
     const income: number[] = [];
     const expenses: number[] = [];
 
-    const dayCount =
-      Math.max(
-        1,
-        Math.min(
-          31,
-          Math.ceil(
-            (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-          )
-        )
-      );
+    const startEat = this.toEAT(start);
 
     for (let i = 0; i < dayCount; i++) {
       const d = new Date(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate() + i,
-        0,
-        0,
-        0,
-        0
+        Date.UTC(
+          startEat.getUTCFullYear(),
+          startEat.getUTCMonth(),
+          startEat.getUTCDate() + i,
+          0,
+          0,
+          0,
+          0
+        )
       );
-      const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      days.push(label);
+      const y = d.getUTCFullYear();
+      const m = d.getUTCMonth();
+      const day = d.getUTCDate();
+      const key = `${y}-${m}-${day}`;
+      const bucket = buckets[key];
 
-      const dayTx = transactions.filter((tx) => {
-        const t = tx.createdAt;
-        return (
-          t.getFullYear() === d.getFullYear() &&
-          t.getMonth() === d.getMonth() &&
-          t.getDate() === d.getDate()
-        );
-      });
-
-      const incomeSum = dayTx
-        .filter((tx) => tx.type === 'Credit')
-        .reduce(
-          (acc, tx) => acc.add(tx.amount as unknown as Prisma.Decimal),
-          new Prisma.Decimal(0)
-        );
-      const expenseSum = dayTx
-        .filter((tx) => tx.type === 'Debit')
-        .reduce(
-          (acc, tx) => acc.add(tx.amount as unknown as Prisma.Decimal),
-          new Prisma.Decimal(0)
-        );
-
-      income.push(Number(incomeSum.toString()));
-      expenses.push(Number(expenseSum.toString()));
+      days.push(`${m + 1}/${day}`);
+      income.push(
+        bucket ? Number(bucket.income.toString()) : 0
+      );
+      expenses.push(
+        bucket ? Number(bucket.expenses.toString()) : 0
+      );
     }
 
     return { days, income, expenses };
@@ -289,25 +342,34 @@ export class DashboardService {
       start = range.startDate;
       end = range.endDate;
     } else {
-      const now = new Date();
-      start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        0,
-        0,
-        0,
-        0
+      const nowUtc = new Date();
+      const eatNow = this.toEAT(nowUtc);
+
+      const eatStart = new Date(
+        Date.UTC(
+          eatNow.getUTCFullYear(),
+          eatNow.getUTCMonth(),
+          eatNow.getUTCDate(),
+          0,
+          0,
+          0,
+          0
+        )
       );
-      end = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() + 1,
-        0,
-        0,
-        0,
-        0
+      const eatEnd = new Date(
+        Date.UTC(
+          eatNow.getUTCFullYear(),
+          eatNow.getUTCMonth(),
+          eatNow.getUTCDate() + 1,
+          0,
+          0,
+          0,
+          0
+        )
       );
+
+      start = this.fromEAT(eatStart);
+      end = this.fromEAT(eatEnd);
     }
 
     const items = await prisma.invoiceItem.findMany({

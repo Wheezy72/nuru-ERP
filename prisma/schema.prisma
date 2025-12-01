@@ -21,23 +21,25 @@ model Tenant {
   features    Json?    @db.JsonB
 
   // Relations
-  users          User[]
-  unitsOfMeasure UnitOfMeasure[]
-  locations      Location[]
-  products       Product[]
-  productBatches ProductBatch[]
-  stockQuants    StockQuant[]
-  customers      Customer[]
-  invoices       Invoice[]
-  transactions   Transaction[]
-  members        Member[]
-  accounts       Account[]
-  loans          Loan[]
-  sessions       Session[]
-  systemLogs     SystemLog[]
-  chamaConstitution ChamaConstitution?
-  stockTakes     StockTake[]
-  stockTakeItems StockTakeItem[]
+  users              User[]
+  unitsOfMeasure     UnitOfMeasure[]
+  locations          Location[]
+  products           Product[]
+  productBatches     ProductBatch[]
+  stockQuants        StockQuant[]
+  customers          Customer[]
+  invoices           Invoice[]
+  transactions       Transaction[]
+  members            Member[]
+  accounts           Account[]
+  loans              Loan[]
+  sessions           Session[]
+  systemLogs         SystemLog[]
+  chamaConstitution  ChamaConstitution?
+  stockTakes         StockTake[]
+  stockTakeItems     StockTakeItem[]
+  employees          Employee[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 
@@ -49,8 +51,9 @@ enum UserRole {
 
 model User {
   id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
+  email        String
   name         String?
+  phone        String?
   tenantId     String   @db.Uuid
   passwordHash String
   role         UserRole
@@ -59,8 +62,10 @@ model User {
 
   tenant     Tenant      @relation(fields: [tenantId], references: [id])
   systemLogs SystemLog[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([tenantId])
+  @@unique([tenantId, email])
 }
 
 model UnitOfMeasure {
@@ -407,4 +412,46 @@ model SystemLog {
 
   @@index([tenantId])
   @@index([tenantId, entityType])
+}
+
+enum EmployeeRole {
+  CASUAL
+  PERMANENT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Employee {
+  id        String         @id @default(uuid()) @db.Uuid
+  tenantId  String         @db.Uuid
+  name      String
+  phone     String?
+  dailyRate Decimal
+  role      EmployeeRole
+  status    EmployeeStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  token     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  user      User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
 }

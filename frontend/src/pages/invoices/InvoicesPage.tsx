@@ -6,6 +6,7 @@ import { DataTable } from '@/components/DataTable';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useTenantFeatures } from '@/hooks/useTenantFeatures';
 
 type Customer = {
   id: string;
@@ -36,6 +37,16 @@ export function InvoicesPage() {
 
   const [startDate, setStartDate] = React.useState<string>('');
   const [endDate, setEndDate] = React.useState<string>('');
+  const [bulkProductId, setBulkProductId] = React.useState<string>('');
+  const [bulkAmount, setBulkAmount] = React.useState<string>('');
+  const [isBulkSubmitting, setIsBulkSubmitting] = React.useState(false);
+
+  const { data: features } = useTenantFeatures();
+  const tenantType =
+    features && typeof (features as any).type === 'string'
+      ? ((features as any).type as string)
+      : undefined;
+  const isSchool = tenantType === 'SCHOOL';
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['invoices', pagination, search, status],
@@ -110,6 +121,30 @@ export function InvoicesPage() {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleBulkSchoolInvoices = async () => {
+    if (!isSchool) return;
+    if (!bulkProductId || !bulkAmount) {
+      alert('Select a fee product and amount before generating invoices.');
+      return;
+    }
+    const amount = Number(bulkAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Enter a valid amount.');
+      return;
+    }
+    setIsBulkSubmitting(true);
+    try {
+      await apiClient.post('/invoices/bulk/school-term', {
+        productId: bulkProductId,
+        unitPrice: amount,
+        issueDate: startDate || new Date().toISOString().slice(0, 10),
+      });
+      await refetch();
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -153,6 +188,42 @@ export function InvoicesPage() {
           </Button>
         </div>
       </div>
+
+      {isSchool && (
+        <Card className="border-dashed border-emerald-300 bg-emerald-50/40 p-3 text-xs">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold text-emerald-900">
+              Bulk Invoicing – Term Fees
+            </div>
+            <div className="text-[0.7rem] text-emerald-800">
+              Generate draft invoices for all students for a selected fee.
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Fee name or code (e.g. TERM1-FEE)"
+              value={bulkProductId}
+              onChange={(e) => setBulkProductId(e.target.value)}
+              className="w-64"
+            />
+            <Input
+              placeholder="Amount (KES)"
+              value={bulkAmount}
+              onChange={(e) => setBulkAmount(e.target.value)}
+              className="w-32"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isBulkSubmitting}
+              onClick={handleBulkSchoolInvoices}
+            >
+              {isBulkSubmitting ? 'Generating...' : 'Generate for All Students'}
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Card className="p-4">
         <DataTable
           columns={columns}

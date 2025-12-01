@@ -66,4 +66,34 @@ router.post('/:id/post', async (req, res, next) => {
   }
 });
 
+router.post('/bulk/school-term', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InvoiceService(tenantId);
+    const { productId, unitPrice, issueDate } = req.body as {
+      productId?: string;
+      unitPrice?: number;
+      issueDate?: string;
+    };
+
+    if (!productId || typeof unitPrice !== 'number') {
+      return res
+        .status(400)
+        .json({ message: 'productId and unitPrice are required' });
+    }
+
+    const issue = issueDate ? new Date(issueDate) : new Date();
+
+    const result = await service.bulkGenerateForAllCustomers({
+      productId,
+      unitPrice,
+      issueDate: issue,
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
