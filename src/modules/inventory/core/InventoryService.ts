@@ -204,6 +204,54 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Convenience method for the \"Open Crate\" style action:
+   * breaks units from the product's default UoM into its first derived unit.
+   */
+  async breakUnit(params: {
+    productId: string;
+    locationId: string;
+    quantity: number;
+    batchId?: string | null;
+  }): Promise<{ from: StockQuant; to: StockQuant }> {
+    const prisma = this.prisma;
+
+    return prisma.$transaction(async (tx) => {
+      const product = await tx.product.findFirst({
+        where: { id: params.productId, tenantId: this.tenantId },
+        include: {
+          defaultUom: {
+            include: {
+              derivedUnits: true,
+            },
+          },
+        },
+      });
+
+      if (!product) {
+        throw new Error('Product not found');
+      }
+
+      const sourceUom = product.defaultUom;
+      const targetUom = product.defaultUom.derivedUnits[0];
+
+      if (!targetUom) {
+        throw new Error('Product does not have a smaller derived unit configured');
+      }
+
+      const sourceQuantity = new Prisma.Decimal(params.quantity);
+
+      return this.breakBulk({
+        productId: product.id,
+        locationId: params.locationId,
+        batchId: params.batchId ?? null,
+        sourceUomId: sourceUom.id,
+        targetUomId: targetUom.id,
+        sourceQuantity,
+      });
+    });
+  }
+
   private async adjustStockTx(
     tx: Prisma.TransactionClient,
     input: {
