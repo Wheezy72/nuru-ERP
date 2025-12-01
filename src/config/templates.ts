@@ -3,16 +3,16 @@ import type { TaxRate } from '@prisma/client';
 export type BusinessBaseTypeId =
   | 'GENERIC'
   | 'RETAIL'
-  | 'CYBER_CAFE'
-  | 'WINE_SPIRITS'
-  | 'AGROVET';
+  | 'SERVICE_HUB'
+  | 'HOSPITALITY'
+  | 'AGRO';
 
 export type FeatureBlockId =
-  | 'TOBACCO_COUNTER'
-  | 'MICRO_SNACKS'
-  | 'GAME_LOUNGE'
-  | 'DIGITAL_CONTENT'
-  | 'LIQUOR_SHELF';
+  | 'SINGLES_COUNTER'
+  | 'SNACK_BAR'
+  | 'GAME_SESSION'
+  | 'DIGITAL_SERVICE'
+  | 'BEVERAGE_SHELF';
 
 export type FeatureBlockDefinition = {
   id: FeatureBlockId;
@@ -31,82 +31,82 @@ export type BaseTemplateDefinition = {
 
 export const FEATURE_BLOCKS: FeatureBlockDefinition[] = [
   {
-    id: 'TOBACCO_COUNTER',
-    label: 'Tobacco Counter',
+    id: 'SINGLES_COUNTER',
+    label: 'Singles Counter',
     description:
-      'Adds Sportsman (Packet) with Stick UoM for single-stick sales in Wines & Spirits or kiosks.',
-    recommendedFor: ['RETAIL', 'WINE_SPIRITS'],
-    tags: ['kadogo', 'tobacco'],
+      'Adds a bundled item and a derived smaller unit for selling single pieces from a pack.',
+    recommendedFor: ['RETAIL', 'HOSPITALITY'],
+    tags: ['kadogo', 'singles'],
   },
   {
-    id: 'MICRO_SNACKS',
-    label: 'Micro Snacks (Njugu/Smokies)',
+    id: 'SNACK_BAR',
+    label: 'Snack Bar',
     description:
-      'Adds Peanuts (10 Bob Pkt) and Smokie (Piece) for kadogo snacks at the till.',
-    recommendedFor: ['RETAIL', 'CYBER_CAFE'],
+      'Adds a small snack pack and a single-piece snack for low price-point add-ons.',
+    recommendedFor: ['RETAIL', 'SERVICE_HUB'],
     tags: ['kadogo', 'snacks'],
   },
   {
-    id: 'GAME_LOUNGE',
-    label: 'Game Lounge (PlayStation)',
+    id: 'GAME_SESSION',
+    label: 'Game Session',
     description:
-      'Adds FIFA Game (10 Mins) as a time-based service for PlayStation or gaming lounges.',
-    recommendedFor: ['CYBER_CAFE'],
+      'Adds a time-based service item (e.g. 10-minute session) for gaming or similar services.',
+    recommendedFor: ['SERVICE_HUB'],
     tags: ['service', 'gaming'],
   },
   {
-    id: 'DIGITAL_CONTENT',
-    label: 'Digital Content (Movie Shop)',
+    id: 'DIGITAL_SERVICE',
+    label: 'Digital Service',
     description:
-      'Adds Movie Transfer (Per GB) and Full Series as digital services for movie shops.',
-    recommendedFor: ['CYBER_CAFE', 'RETAIL'],
-    tags: ['digital', 'movies'],
+      'Adds per-unit digital transfer and bundled digital service products (e.g. per GB, per bundle).',
+    recommendedFor: ['SERVICE_HUB', 'RETAIL'],
+    tags: ['digital', 'services'],
   },
   {
-    id: 'LIQUOR_SHELF',
-    label: 'Liquor Shelf',
+    id: 'BEVERAGE_SHELF',
+    label: 'Beverage Shelf',
     description:
-      'Adds Chrome Vodka 250ml, Tusker Lager, and a Tot UoM for open-bottle shots.',
-    recommendedFor: ['WINE_SPIRITS'],
-    tags: ['liquor', 'bar'],
+      'Adds bottled beverages and a smaller pouring unit derived from the bottle size.',
+    recommendedFor: ['HOSPITALITY', 'RETAIL'],
+    tags: ['beverage', 'bar'],
   },
 ];
 
 export const BASE_TEMPLATES: BaseTemplateDefinition[] = [
   {
     id: 'GENERIC',
-    label: 'Generic Shop',
+    label: 'Generic Business',
     description:
-      'A simple mixed shop. Start light, then add feature blocks as you grow.',
-    recommendedBlocks: ['MICRO_SNACKS'],
+      'A simple mixed business. Start light, then add feature blocks as you grow.',
+    recommendedBlocks: ['SNACK_BAR'],
   },
   {
     id: 'RETAIL',
-    label: 'Retail / FMCG Shop',
+    label: 'Retail / Shop',
     description:
-      'Supermarket or duka selling fast-moving goods, airtime, and basics.',
-    recommendedBlocks: ['MICRO_SNACKS'],
+      'A convenience or general store selling goods at the counter.',
+    recommendedBlocks: ['SNACK_BAR'],
   },
   {
-    id: 'CYBER_CAFE',
-    label: 'Cyber Café',
+    id: 'SERVICE_HUB',
+    label: 'Service Hub',
     description:
-      'Browsers, printers, and scanners that often sell movies, snacks, and gaming.',
-    // We pre-select digital content + snacks. Gaming is an optional add-on.
-    recommendedBlocks: ['DIGITAL_CONTENT', 'MICRO_SNACKS'],
+      'Any service-oriented business (workstations, repairs, entertainment, etc.).',
+    // Pre-select digital and snack services; game sessions are an optional add-on.
+    recommendedBlocks: ['DIGITAL_SERVICE', 'SNACK_BAR'],
   },
   {
-    id: 'WINE_SPIRITS',
-    label: 'Wines & Spirits',
+    id: 'HOSPITALITY',
+    label: 'Hospitality / Lounge',
     description:
-      'Liquor shop with single-stick cigarettes and bar-style tots for shots.',
-    recommendedBlocks: ['LIQUOR_SHELF', 'TOBACCO_COUNTER', 'MICRO_SNACKS'],
+      'A small bar, lounge, or meeting spot that needs beverages and singles.',
+    recommendedBlocks: ['BEVERAGE_SHELF', 'SINGLES_COUNTER', 'SNACK_BAR'],
   },
   {
-    id: 'AGROVET',
-    label: 'Agrovet / Vet',
+    id: 'AGRO',
+    label: 'Agro / Inputs',
     description:
-      'Farm inputs and vet supplies. Combine with snacks or digital content as needed.',
-    recommendedBlocks: ['MICRO_SNACKS'],
+      'Farm inputs and related services. Combine with snacks or digital as needed.',
+    recommendedBlocks: ['SNACK_BAR'],
   },
 ];
