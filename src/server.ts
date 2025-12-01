@@ -12,6 +12,7 @@ import dashboardRoutes from './modules/dashboard/http/dashboard.routes';
 import reportingRoutes from './modules/reporting/http/reporting.routes';
 import authRoutes from './modules/auth/http/auth.routes';
 import mpesaRoutes from './modules/payments/http/mpesa.routes';
+import gatewayRoutes from './modules/payments/http/gateway.routes';
 import stockTakeRoutes from './modules/stocktake/http/stocktake.routes';
 import payrollRoutes from './modules/payroll/http/payroll.routes';
 
@@ -37,6 +38,7 @@ app.use('/api/tenant', tenantRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reporting', reportingRoutes);
 app.use('/api/payments/mpesa', mpesaRoutes);
+app.use('/api/payments/gateway', gatewayRoutes);
 app.use('/api/stocktakes', stockTakeRoutes);
 app.use('/api/payroll', payrollRoutes);
 

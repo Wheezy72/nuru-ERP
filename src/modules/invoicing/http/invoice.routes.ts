@@ -66,6 +66,44 @@ router.post('/:id/post', async (req, res, next) => {
   }
 });
 
+router.post('/:id/manual-payment', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InvoiceService(tenantId);
+    const { amount, method, reference, paidAt } = req.body as {
+      amount?: number;
+      method?: string;
+      reference?: string;
+      paidAt?: string;
+    };
+
+    if (typeof amount !== 'number' || !method) {
+      return res
+        .status(400)
+        .json({ message: 'amount and method are required' });
+    }
+
+    const userIdHeader = req.headers['x-user-id'];
+    const userId =
+      (Array.isArray(userIdHeader) ? userIdHeader[0] : userIdHeader)?.toString() ||
+      null;
+
+    const paidAtDate = paidAt ? new Date(paidAt) : new Date();
+
+    const invoice = await service.recordExternalPayment(req.params.id, {
+      amount,
+      method,
+      reference,
+      paidAt: paidAtDate,
+      userId,
+    });
+
+    res.json(invoice);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/bulk/school-term', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);

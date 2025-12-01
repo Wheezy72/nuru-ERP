@@ -365,4 +365,59 @@ export class InvoiceService {
 
     return { created: customers.length };
   }
+
+  /**
+   * Record an external (manual) payment such as EFT / cheque.
+   * Marks the invoice as Paid and logs a SystemLog entry flagged for verification.
+   */
+  async recordExternalPayment(
+    invoiceId: string,
+    input: {
+      amount: number;
+      method: string;
+      reference?: string;
+      paidAt: Date;
+      userId?: string | null;
+    }
+  ) {
+    const prisma = this.prisma;
+
+    const invoice = await prisma.invoice.findFirst({
+      where: { id: invoiceId, tenantId: this.tenantId },
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    if (invoice.status === 'Paid') {
+      return invoice;
+    }
+
+    const updated = await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: 'Paid' },
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        tenantId: this.tenantId,
+        userId: input.userId ?? null,
+        action: 'INVOICE_PAID_MANUAL',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        metadata: {
+          previousStatus: invoice.status,
+          newStatus: 'Paid',
+          method: input.method,
+          reference: input.reference,
+          amount: new Prisma.Decimal(input.amount),
+          paidAt: input.paidAt,
+          note: 'Manual Entry - Verification Needed',
+        },
+      },
+    });
+
+    return updated;
+  }
 }

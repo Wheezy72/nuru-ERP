@@ -11,6 +11,8 @@ import { useTenantFeatures } from '@/hooks/useTenantFeatures';
 type Customer = {
   id: string;
   name: string;
+  phone?: string | null;
+  email?: string | null;
 };
 
 type Invoice = {
@@ -83,6 +85,131 @@ export function InvoicesPage() {
       cell: ({ getValue }) => getValue<string>(),
     },
     { accessorKey: 'status', header: 'Status' },
+    {
+      id: 'actions',
+      header: 'Actions',
+      cell: ({ row }) => {
+        const invoice = row.original;
+        const amountNumber = Number(invoice.totalAmount);
+        const isDraftOrPosted =
+          invoice.status === 'Draft' || invoice.status === 'Posted';
+
+        const handleMpesaClick = async () => {
+          try {
+            const phone =
+              invoice.customer.phone ||
+              window.prompt('Enter M-Pesa phone number (e.g. 2547XXXXXXXX)');
+            if (!phone) {
+              return;
+            }
+            if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+              alert('Invalid invoice amount.');
+              return;
+            }
+            await apiClient.post('/payments/mpesa/stkpush', {
+              phoneNumber: phone,
+              amount: amountNumber,
+              invoiceId: invoice.id,
+              accountReference: invoice.invoiceNo,
+              description: `Invoice ${invoice.invoiceNo}`,
+            });
+            alert('M-Pesa STK push initiated. Complete payment on your phone.');
+          } catch (err: any) {
+            alert(
+              err?.response?.data?.message ||
+                'Failed to initiate M-Pesa payment.'
+            );
+          }
+        };
+
+        const handleCardClick = async () => {
+          try {
+            const response = await apiClient.post(
+              '/payments/gateway/initiate',
+              {
+                invoiceId: invoice.id,
+              }
+            );
+            const { redirectUrl } = response.data as { redirectUrl: string };
+            window.location.href = redirectUrl;
+          } catch (err: any) {
+            alert(
+              err?.response?.data?.message ||
+                'Failed to initiate card/bank payment.'
+            );
+          }
+        };
+
+        const handleManualClick = async () => {
+          const amountStr =
+            window.prompt('Amount received (KES)', invoice.totalAmount) || '';
+          const amountValue = Number(amountStr);
+          if (!Number.isFinite(amountValue) || amountValue <= 0) {
+            alert('Enter a valid amount.');
+            return;
+          }
+          const method =
+            window.prompt('Payment method (e.g. EFT, Cheque)', 'EFT') || '';
+          if (!method) {
+            return;
+          }
+          const reference =
+            window.prompt('Reference number (optional)', '') || undefined;
+          const dateStr =
+            window.prompt(
+              'Payment date (YYYY-MM-DD)',
+              new Date().toISOString().slice(0, 10)
+            ) || new Date().toISOString().slice(0, 10);
+
+          try {
+            await apiClient.post(`/invoices/${invoice.id}/manual-payment`, {
+              amount: amountValue,
+              method,
+              reference,
+              paidAt: dateStr,
+            });
+            alert('Manual payment recorded for verification.');
+            await refetch();
+          } catch (err: any) {
+            alert(
+              err?.response?.data?.message ||
+                'Failed to record manual payment.'
+            );
+          }
+        };
+
+        return (
+          <div className="flex flex-wrap gap-1 text-[0.7rem]">
+            <Button
+              size="sm"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={handleMpesaClick}
+              disabled={!isDraftOrPosted}
+            >
+              Pay with M-Pesa
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-slate-500 bg-slate-600 text-white hover:bg-slate-700 hover:text-white"
+              onClick={handleCardClick}
+              disabled={!isDraftOrPosted}
+            >
+              Pay with Card
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[0.7rem]"
+              onClick={handleManualClick}
+              disabled={invoice.status === 'Paid'}
+            >
+              Record External
+            </Button>
+          </div>
+        );
+      },
+    },
   ];
 
   const items = data?.items ?? [];
