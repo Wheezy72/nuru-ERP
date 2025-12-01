@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { TenantService } from '../core/TenantService';
 import { requireAuth } from '../../../shared/middleware/requireRole';
+import { TemplateEngine } from '../core/TemplateEngine';
 
 const router = Router();
 
@@ -25,6 +26,43 @@ router.get('/features', async (req, res, next) => {
     const service = new TenantService(tenantId);
     const features = await service.getFeatures();
     res.json({ features });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/templates/meta', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const engine = new TemplateEngine(tenantId);
+    const meta = await engine.getMeta();
+    res.json(meta);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/templates/apply', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const engine = new TemplateEngine(tenantId);
+    const { baseType, blocks } = req.body as {
+      baseType?: string;
+      blocks?: string[];
+    };
+
+    if (!blocks || !Array.isArray(blocks) || blocks.length === 0) {
+      return res
+        .status(400)
+        .json({ message: 'At least one feature block must be selected' });
+    }
+
+    await engine.applyTemplate({
+      baseType: baseType as any,
+      blocks: blocks as any,
+    });
+
+    res.json({ status: 'ok' });
   } catch (err) {
     next(err);
   }

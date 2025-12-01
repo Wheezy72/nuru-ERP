@@ -65,6 +65,12 @@ const navItems: NavItem[] = [
     featureFlag: 'enableChama',
   },
   {
+    label: 'Business Setup',
+    path: '/setup',
+    group: 'Settings',
+    roles: ['ADMIN'],
+  },
+  {
     label: 'Audit Log',
     path: '/settings/audit-log',
     group: 'Settings',

@@ -173,7 +173,99 @@ npm run dev
 
 Visit `http://localhost:5173`.
 
----
+### 3.5 Atomic Template Mixer (Onboarding Wizard)
+
+Nuru ships with an “Atomic” template engine so that real hybrid businesses can compose their setup:
+
+- A cyber café that also sells movies and smokies.
+- A wines & spirits shop that also sells single-stick cigarettes and peanuts.
+- An agrovet that also runs a small chama.
+
+You access it from:
+
+- Route: `/setup`
+- Sidebar: Settings → Business Setup (Admins only).
+
+Steps:
+
+1. Pick base type
+
+   - Examples:
+
+     - Generic Shop
+     - Retail / FMCG Shop
+     - Cyber Café
+     - Wines & Spirits
+     - Agrovet / Vet
+
+   - This does not lock you in; it only preselects suggested feature blocks.
+
+2. Mix feature blocks
+
+   - You can tick any combination of:
+
+     - Tobacco Counter
+
+       - Adds “Sportsman (Packet)” + “Stick” UoM (1 Packet = 20 Sticks).
+       - For wines & spirits or kiosks that sell single cigarettes.
+
+     - Micro Snacks (Njugu/Smokies)
+
+       - Adds “Peanuts (10 Bob Pkt)” and “Smokie (Piece)”.
+       - Low price-points for kadogo snacks at the counter.
+
+     - Game Lounge (PlayStation)
+
+       - Adds “FIFA Game (10 Mins)” as a service product.
+       - Seeded with effectively infinite stock so you can bill time without stock errors.
+
+     - Digital Content (Movie Shop)
+
+       - Adds “Movie Transfer (Per GB)” and “Full Series”.
+       - Uses service/digital UoMs so you can bill per GB or per title.
+
+     - Liquor Shelf
+
+       - Adds “Chrome Vodka 250ml” and “Tusker Lager”.
+       - Adds “Tot” UoM for open-bottle shots (derived from bottle size).
+
+3. Seed your business
+
+   - When you click “Seed my business”:
+
+     - Nuru creates a default `Location` if none exists (Main Shop).
+     - UoMs are created if missing (Packet, Stick, Piece, Minute, GB, Service, Tot, etc.).
+     - Products are created with consistent SKUs per block; all are normal `Product` records.
+     - Initial `StockQuant` rows are created where it makes sense (e.g. snack and liquor stock, effectively infinite stock for services).
+
+   - The choices are recorded into `Tenant.features.template`:
+
+     - Example:
+
+       ```json
+       {
+         "template": {
+           "baseType": "CYBER_CAFE",
+           "blocks": ["DIGITAL_CONTENT", "MICRO_SNACKS", "GAME_LOUNGE"]
+         }
+       }
+       ```
+
+4. Edit freely afterwards
+
+   - Seeded products are just normal inventory items:
+
+     - You can rename “Peanuts (10 Bob Pkt)” to “Popcorn (Small)” without breaking anything.
+     - You can change categories (e.g. move “FIFA Game (10 Mins)” under “Gaming”).
+     - You can adjust min stock levels, add barcodes/SKUs, etc.
+
+   - No logic depends on the product name; everything is anchored on IDs and SKUs.
+
+This “Atomic Template Mixer” is what lets Nuru model hybrid businesses that sit at the intersection of:
+
+- Kadogo economy (10 bob packets).
+- Service economy (time-based gaming, digital transfers).
+- Digital economy (movies and series).
 
 ## 4. Payments Integrations
 
