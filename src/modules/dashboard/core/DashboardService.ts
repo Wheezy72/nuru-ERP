@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, TaxRate } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
 type DateRange = {
@@ -20,24 +20,25 @@ export class DashboardService {
   async getSummary(range: DateRange) {
     const prisma = this.prisma;
 
-    const [metrics, cashFlow, chamaTrust, stockAlerts, insights] =
-      await Promise.all([
-        this.getMetrics(prisma, range),
-        this.getCashFlow(prisma, range),
-        this.getChamaTrust(prisma),
-        this.getStockAlerts(prisma),
-        this.getSmartInsights(prisma),
-      ]);
-
-    return {
+    const [
       metrics,
       cashFlow,
       chamaTrust,
       stockAlerts,
       insights,
-    };
-  }
+      taxLiability,
+    ] = await Promise.all([
+      this.getMetrics(prisma, range),
+      this.getCashFlow(prisma, range),
+      this.getChamaTrust(prisma),
+      this.getStockAlerts(prisma),
+      this.getSmartInsights(prisma),
+      this.getTaxLiability(prisma, range),
+    ]);
 
+    return {
+      metrics,
+     
   private async getMetrics(
     prisma: ReturnType<typeof this['prisma']>,
     range: DateRange
@@ -271,6 +272,131 @@ export class DashboardService {
     }
 
     return alerts;
+  }
+
+  /**
+   * Compute VAT/tax liability for the selected period.
+   * This is the backbone for an eTIMS-style \"Regulator View\".
+   */
+  private async getTaxLiability(
+    prisma: ReturnType<typeof this['prisma']>,
+    range: DateRange
+  ) {
+    let start: Date;
+    let end: Date;
+
+    if (range.startDate && range.endDate) {
+      start = range.startDate;
+      end = range.endDate;
+    } else {
+      const now = new Date();
+      start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        0,
+        0,
+        0,
+        0
+      );
+      end = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        0,
+        0,
+        0,
+        0
+      );
+    }
+
+    const items = await prisma.invoiceItem.findMany({
+      where: {
+        tenantId: this.tenantId,
+        invoice: {
+          tenantId: this.tenantId,
+          status: { in: ['Posted', 'Paid'] },
+          issueDate: {
+            gte: start,
+            lt: end,
+          },
+        },
+      },
+      select: {
+        lineTotal: true,
+        taxRate: true,
+      },
+    });
+
+    const breakdown = {
+      vat16: {
+        taxable: new Prisma.Decimal(0),
+        tax: new Prisma.Decimal(0),
+      },
+      vat8: {
+        taxable: new Prisma.Decimal(0),
+        tax: new Prisma.Decimal(0),
+      },
+      exempt: {
+        amount: new Prisma.Decimal(0),
+      },
+      zeroRated: {
+        amount: new Prisma.Decimal(0),
+      },
+      totalTax: new Prisma.Decimal(0),
+    };
+
+    const rateFor = (rate: TaxRate) => {
+      switch (rate) {
+        case 'VAT_16':
+          return new Prisma.Decimal(0.16);
+        case 'VAT_8':
+          return new Prisma.Decimal(0.08);
+        case 'EXEMPT':
+        case 'ZERO':
+        default:
+          return new Prisma.Decimal(0);
+      }
+    };
+
+    for (const item of items) {
+      const amount = item.lineTotal as unknown as Prisma.Decimal;
+      const rate = item.taxRate as TaxRate;
+      const r = rateFor(rate);
+      const tax = amount.mul(r);
+
+      if (rate === 'VAT_16') {
+        breakdown.vat16.taxable = breakdown.vat16.taxable.add(amount);
+        breakdown.vat16.tax = breakdown.vat16.tax.add(tax);
+      } else if (rate === 'VAT_8') {
+        breakdown.vat8.taxable = breakdown.vat8.taxable.add(amount);
+        breakdown.vat8.tax = breakdown.vat8.tax.add(tax);
+      } else if (rate === 'EXEMPT') {
+        breakdown.exempt.amount = breakdown.exempt.amount.add(amount);
+      } else if (rate === 'ZERO') {
+        breakdown.zeroRated.amount = breakdown.zeroRated.amount.add(amount);
+      }
+
+      breakdown.totalTax = breakdown.totalTax.add(tax);
+    }
+
+    return {
+      totalTax: Number(breakdown.totalTax.toString()),
+      vat16: {
+        taxable: Number(breakdown.vat16.taxable.toString()),
+        tax: Number(breakdown.vat16.tax.toString()),
+      },
+      vat8: {
+        taxable: Number(breakdown.vat8.taxable.toString()),
+        tax: Number(breakdown.vat8.tax.toString()),
+      },
+      exempt: {
+        amount: Number(breakdown.exempt.amount.toString()),
+      },
+      zeroRated: {
+        amount: Number(breakdown.zeroRated.amount.toString()),
+      },
+    };
   }
 
   /**

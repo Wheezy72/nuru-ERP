@@ -197,7 +197,8 @@ async function seedInventory(tenantId: string) {
           : name.includes('Oil')
           ? 'FMCG'
           : 'General',
-        minStockQuantity: new prisma.$extends({}).Decimal ? undefined : undefined,
+        // Set a simple minimum stock threshold to enable meaningful alerts.
+        minStockQuantity: faker.number.int({ min: 5, max: 30 }),
       },
     });
 
@@ -267,8 +268,7 @@ async function seedInvoices(tenantId: string, locationId: string, products: any[
     const customer = faker.helpers.arrayElement(customers);
 
     const lineCount = faker.number.int({ min: 1, max: 5 });
-    const items = [];
-    let total = new prisma.$extends({}).Decimal ? undefined : undefined;
+    const items: any[] = [];
 
     let subtotal = 0;
 
