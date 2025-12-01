@@ -5,14 +5,23 @@ import path from 'path';
 const REQUIRED_ENV = [
   'DATABASE_URL',
   'JWT_SECRET',
+  // Mobile money
   'MPESA_CONSUMER_KEY',
+  'MPESA_CONSUMER_SECRET',
+  // WhatsApp notifications
+  'WHATSAPP_ACCESS_TOKEN',
+  'WHATSAPP_PHONE_NUMBER_ID',
+  // Card/bank gateway (Pesapal in this deployment)
   'PESAPAL_CONSUMER_KEY',
+  'PESAPAL_CONSUMER_SECRET',
 ];
 
 type HealthReport = {
   missingEnv: string[];
   dbOk: boolean;
   dbError?: string;
+  negativeStock: { productId: string; quantity: string }[];
+  postedWithoutTransactions: { invoiceId: string; invoiceNo: string }[];
   todos: { file: string; line: number; text: string }[];
 };
 
@@ -26,21 +35,69 @@ async function checkEnv(): Promise<string[]> {
   return missing;
 }
 
-async function checkDatabase(): Promise<{ ok: boolean; error?: string }> {
+async function checkDatabaseAndIntegrity(): Promise<{
+  ok: boolean;
+  error?: string;
+  negativeStock: { productId: string; quantity: string }[];
+  postedWithoutTransactions: { invoiceId: string; invoiceNo: string }[];
+}> {
   const prisma = new PrismaClient();
   try {
     // Simple connectivity check
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await prisma.$queryRaw<any>`SELECT 1`;
+
+    const negativeStock = await prisma.stockQuant.findMany({
+      where: {
+        quantity: {
+          lt: 0,
+        },
+      },
+      select: {
+        productId: true,
+        quantity: true,
+      },
+    });
+
+    const postedWithoutTransactions = await prisma.invoice.findMany({
+      where: {
+        status: 'Posted',
+        transactions: {
+          none: {},
+        },
+      },
+      select: {
+        id: true,
+        invoiceNo: true,
+      },
+    });
+
     await prisma.$disconnect();
-    return { ok: true };
+    return {
+      ok: true,
+      negativeStock: negativeStock.map((row) => ({
+        productId: row.productId,
+        quantity: row.quantity.toString(),
+      })),
+      postedWithoutTransactions: postedWithoutTransactions.map((inv) => ({
+        invoiceId: inv.id,
+        invoiceNo: inv.invoiceNo,
+      })),
+    };
   } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error('Database connectivity check failed', err);
+    console.error('Database connectivity / integrity check failed', err);
     await prisma.$disconnect();
-    return { ok: false, error: err?.message || String(err) };
+    return {
+      ok: false,
+      error: err?.message || String(err),
+      negativeStock: [],
+      postedWithoutTransactions: [],
+    };
   }
 }
+
+
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -86,13 +143,17 @@ async function main() {
   const report: HealthReport = {
     missingEnv: [],
     dbOk: false,
+    negativeStock: [],
+    postedWithoutTransactions: [],
     todos: [],
   };
 
   report.missingEnv = await checkEnv();
-  const dbResult = await checkDatabase();
+  const dbResult = await checkDatabaseAndIntegrity();
   report.dbOk = dbResult.ok;
   report.dbError = dbResult.error;
+  report.negativeStock = dbResult.negativeStock;
+  report.postedWithoutTransactions = dbResult.postedWithoutTransactions;
 
   const root = process.cwd();
   report.todos = collectTodos(root);
@@ -113,6 +174,28 @@ async function main() {
     console.log('  FAILED -', report.dbError);
   }
 
+  console.log('\nIntegrity checks:');
+  if (report.negativeStock.length === 0) {
+    console.log('  ✓ No negative stock quants.');
+  } else {
+    console.log('  ⚠ Negative stock found:');
+    for (const row of report.negativeStock) {
+      console.log(
+        `    Product ${row.productId} has negative quantity ${row.quantity}`
+      );
+    }
+  }
+  if (report.postedWithoutTransactions.length === 0) {
+    console.log('  ✓ All posted invoices have at least one transaction.');
+  } else {
+    console.log('  ⚠ Posted invoices without transactions:');
+    for (const inv of report.postedWithoutTransactions) {
+      console.log(
+        `    Invoice ${inv.invoiceNo} (${inv.invoiceId}) has no linked transactions`
+      );
+    }
+  }
+
   console.log('\nTODOs remaining in codebase:');
   if (report.todos.length === 0) {
     console.log('  None 🎯');
@@ -122,7 +205,11 @@ async function main() {
     }
   }
 
-  const hasErrors = report.missingEnv.length > 0 || !report.dbOk;
+  const hasErrors =
+    report.missingEnv.length > 0 ||
+    !report.dbOk ||
+    report.negativeStock.length > 0 ||
+    report.postedWithoutTransactions.length > 0;
   process.exit(hasErrors ? 1 : 0);
 }
 

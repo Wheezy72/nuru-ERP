@@ -117,7 +117,7 @@ export class GatewayService {
    * Mark an invoice as paid via card/bank, logging the gateway reference.
    * Intended to be called from the payment gateway webhook.
    */
-  async markInvoicePaid(invoiceId: string, gatewayRef: string) {
+  async markInvoicePaid(invoiceId: string, gatewayRef: string, amount?: number) {
     const prisma = this.prisma;
 
     const invoice = await prisma.invoice.findFirst({
@@ -132,14 +132,74 @@ export class GatewayService {
       return;
     }
 
-    if (invoice.status === 'Paid') {
+    if (amount !== undefined && amount <= 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `Ignoring card callback with non-positive amount for invoice ${invoiceId}`
+      );
       return;
+    }
+
+    // Idempotency: avoid double-crediting the same gateway reference
+    if (gatewayRef) {
+      const existingTx = await prisma.transaction.findFirst({
+        where: {
+          tenantId: this.tenantId,
+          invoiceId: invoice.id,
+          reference: gatewayRef,
+          type: 'Credit',
+        },
+      });
+      if (existingTx) {
+        return invoice;
+      }
+    }
+
+    const existingAgg = await prisma.transaction.aggregate({
+      where: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        type: 'Credit',
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    const alreadyPaid = existingAgg._sum.amount ?? new Prisma.Decimal(0);
+    const paymentAmount =
+      amount !== undefined ? new Prisma.Decimal(amount) : new Prisma.Decimal(0);
+    const newPaidTotal = alreadyPaid.add(paymentAmount);
+
+    const totalAmountDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+
+    let newStatus = invoice.status;
+    if (paymentAmount.gt(0)) {
+      if (newPaidTotal.gte(totalAmountDecimal)) {
+        newStatus = 'Paid';
+      } else if (newPaidTotal.gt(0)) {
+        newStatus = 'Partial';
+      }
     }
 
     const updated = await prisma.invoice.update({
       where: { id: invoice.id },
-      data: { status: 'Paid' },
+      data: { status: newStatus },
     });
+
+    if (paymentAmount.gt(0)) {
+      await prisma.transaction.create({
+        data: {
+          tenantId: this.tenantId,
+          invoiceId: invoice.id,
+          accountId: null,
+          amount: paymentAmount,
+          type: 'Credit',
+          reference:
+            gatewayRef || `Card payment for ${invoice.invoiceNo}`,
+        },
+      });
+    }
 
     await prisma.systemLog.create({
       data: {
@@ -150,8 +210,12 @@ export class GatewayService {
         entityId: invoice.id,
         metadata: {
           previousStatus: invoice.status,
-          newStatus: 'Paid',
+          newStatus,
           gatewayRef,
+          amount: paymentAmount,
+          totalAmount: totalAmountDecimal,
+          alreadyPaid,
+          newPaidTotal,
         },
       },
     });

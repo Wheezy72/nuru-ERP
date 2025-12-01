@@ -368,7 +368,7 @@ export class InvoiceService {
 
   /**
    * Record an external (manual) payment such as EFT / cheque.
-   * Marks the invoice as Paid and logs a SystemLog entry flagged for verification.
+   * Updates invoice status based on partial vs full payment and logs a SystemLog entry flagged for verification.
    */
   async recordExternalPayment(
     invoiceId: string,
@@ -382,6 +382,10 @@ export class InvoiceService {
   ) {
     const prisma = this.prisma;
 
+    if (input.amount <= 0) {
+      throw new Error('Payment amount must be positive');
+    }
+
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId: this.tenantId },
     });
@@ -390,13 +394,46 @@ export class InvoiceService {
       throw new Error('Invoice not found');
     }
 
-    if (invoice.status === 'Paid') {
-      return invoice;
+    const existingAgg = await prisma.transaction.aggregate({
+      where: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        type: 'Credit',
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    const alreadyPaid = existingAgg._sum.amount ?? new Prisma.Decimal(0);
+    const paymentAmount = new Prisma.Decimal(input.amount);
+    const newPaidTotal = alreadyPaid.add(paymentAmount);
+    const totalAmountDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+
+    let newStatus = invoice.status;
+    if (newPaidTotal.gte(totalAmountDecimal)) {
+      newStatus = 'Paid';
+    } else if (newPaidTotal.gt(0)) {
+      newStatus = 'Partial';
     }
 
     const updated = await prisma.invoice.update({
       where: { id: invoice.id },
-      data: { status: 'Paid' },
+      data: { status: newStatus },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        accountId: null,
+        amount: paymentAmount,
+        type: 'Credit',
+        reference:
+          input.reference ||
+          `Manual ${input.method} payment for ${invoice.invoiceNo}`,
+        createdAt: input.paidAt,
+      },
     });
 
     await prisma.systemLog.create({
@@ -408,16 +445,162 @@ export class InvoiceService {
         entityId: invoice.id,
         metadata: {
           previousStatus: invoice.status,
-          newStatus: 'Paid',
+          newStatus,
           method: input.method,
           reference: input.reference,
-          amount: new Prisma.Decimal(input.amount),
+          amount: paymentAmount,
           paidAt: input.paidAt,
+          totalAmount: totalAmountDecimal,
+          alreadyPaid,
+          newPaidTotal,
           note: 'Manual Entry - Verification Needed',
         },
       },
     });
 
     return updated;
+  }
+
+  /**
+   * Load an invoice with its items and computed payment/balance summary.
+   */
+  async getInvoiceWithBalances(id: string) {
+    const prisma = this.prisma;
+
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, tenantId: this.tenantId },
+      include: {
+        customer: true,
+        items: {
+          include: {
+            product: true,
+            uom: true,
+          },
+        },
+        transactions: true,
+      },
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    const paidDecimal = invoice.transactions
+      .filter((tx) => tx.type === 'Credit')
+      .reduce(
+        (acc, tx) =>
+          acc.add(tx.amount as unknown as Prisma.Decimal),
+        new Prisma.Decimal(0)
+      );
+
+    const totalDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+    const balanceDecimal = totalDecimal.sub(paidDecimal);
+
+    return {
+      invoice,
+      paidAmount: Number(paidDecimal.toString()),
+      balanceDue: Number(balanceDecimal.toString()),
+    };
+  }
+
+  /**
+   * Return payment transactions and audit logs for an invoice.
+   */
+  async getInvoiceHistory(id: string) {
+    const prisma = this.prisma;
+
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, tenantId: this.tenantId },
+      select: { id: true },
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    const [payments, logs] = await Promise.all([
+      prisma.transaction.findMany({
+        where: {
+          tenantId: this.tenantId,
+          invoiceId: id,
+          type: 'Credit',
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.systemLog.findMany({
+        where: {
+          tenantId: this.tenantId,
+          entityType: 'Invoice',
+          entityId: id,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    return { payments, logs };
+  }
+
+  /**
+   * Send a WhatsApp payment reminder for an invoice with outstanding balance.
+   */
+  async sendPaymentReminder(
+    invoiceId: string,
+    userId?: string | null
+  ) {
+    const prisma = this.prisma;
+
+    const invoice = await prisma.invoice.findFirst({
+      where: { id: invoiceId, tenantId: this.tenantId },
+      include: {
+        customer: true,
+        transactions: true,
+      },
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    const customer = invoice.customer;
+    if (!customer?.phone) {
+      throw new Error('Customer has no phone number for WhatsApp reminder');
+    }
+
+    const paidDecimal = invoice.transactions
+      .filter((tx) => tx.type === 'Credit')
+      .reduce(
+        (acc, tx) =>
+          acc.add(tx.amount as unknown as Prisma.Decimal),
+        new Prisma.Decimal(0)
+      );
+
+    const totalDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+    const balanceDecimal = totalDecimal.sub(paidDecimal);
+
+    if (balanceDecimal.lte(new Prisma.Decimal(0))) {
+      return;
+    }
+
+    const balanceNumber = Number(balanceDecimal.toString());
+
+    const whatsapp = new WhatsAppService(this.tenantId);
+    const message = `Hello ${customer.name}, reminder of outstanding balance: KES ${balanceNumber.toLocaleString()} for Invoice ${invoice.invoiceNo}.`;
+
+    await whatsapp.sendText(customer.phone, message);
+
+    await prisma.systemLog.create({
+      data: {
+        tenantId: this.tenantId,
+        userId: userId ?? null,
+        action: 'INVOICE_REMINDER_SENT',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        metadata: {
+          balance: balanceDecimal,
+          customerName: customer.name,
+          customerPhone: customer.phone,
+        },
+      },
+    });
   }
 }

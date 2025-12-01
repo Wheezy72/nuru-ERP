@@ -37,6 +37,7 @@ export class DashboardService {
       stockAlerts,
       insights,
       taxLiability,
+      debtors,
     ] = await Promise.all([
       this.getMetrics(prisma, range),
       this.getCashFlow(prisma, range),
@@ -44,6 +45,7 @@ export class DashboardService {
       this.getStockAlerts(prisma),
       this.getSmartInsights(prisma),
       this.getTaxLiability(prisma, range),
+      this.getDebtors(prisma),
     ]);
 
     return {
@@ -53,6 +55,7 @@ export class DashboardService {
       stockAlerts,
       insights,
       taxLiability,
+      debtors,
     };
   }
 
@@ -100,7 +103,7 @@ export class DashboardService {
     const invoicesAgg = await prisma.invoice.aggregate({
       where: {
         tenantId: this.tenantId,
-        status: { in: ['Posted', 'Paid'] },
+        status: { in: ['Posted', 'Partial', 'Paid'] },
         issueDate: {
           gte: start,
           lt: end,
@@ -377,7 +380,7 @@ export class DashboardService {
         tenantId: this.tenantId,
         invoice: {
           tenantId: this.tenantId,
-          status: { in: ['Posted', 'Paid'] },
+          status: { in: ['Posted', 'Partial', 'Paid'] },
           issueDate: {
             gte: start,
             lt: end,
@@ -388,7 +391,8 @@ export class DashboardService {
         lineTotal: true,
         taxRate: true,
       },
-    });
+   _code }new)</;
+
 
     const breakdown = {
       vat16: {
@@ -551,7 +555,7 @@ export class DashboardService {
         invoices: {
           where: {
             tenantId: this.tenantId,
-            status: { in: ['Posted', 'Paid'] },
+            status: { in: ['Posted', 'Partial', 'Paid'] },
           },
           select: {
             issueDate: true,
@@ -596,7 +600,7 @@ export class DashboardService {
       where: {
         tenantId: this.tenantId,
         invoice: {
-          status: { in: ['Posted', 'Paid'] },
+          status: { in: ['Posted', 'Partial', 'Paid'] },
           issueDate: { gte: historyStart, lte: now },
         },
       },
@@ -705,7 +709,7 @@ export class DashboardService {
       where: {
         tenantId: this.tenantId,
         invoice: {
-          status: { in: ['Posted', 'Paid'] },
+          status: { in: ['Posted', 'Partial},
           issueDate: { gte: cutoff },
         },
       },
@@ -766,5 +770,85 @@ export class DashboardService {
     result.sort((a, b) => b.quantity - a.quantity);
 
     return result;
+  }
+
+  /**
+   * Compute outstanding balances per invoice to power the Debtors view.
+   */
+  private async getDebtors(prisma: ReturnType<typeof this['prisma']>) {
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        tenantId: this.tenantId,
+        status: {
+          not: 'Draft',
+        },
+      },
+      select: {
+        id: true,
+        invoiceNo: true,
+        status: true,
+        totalAmount: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (invoices.length === 0) {
+      return [];
+    }
+
+    const txAgg = await prisma.transaction.groupBy({
+      by: ['invoiceId'],
+      where: {
+        tenantId: this.tenantId,
+        invoiceId: {
+          in: invoices.map((inv) => inv.id),
+        },
+        type: 'Credit',
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    const paidMap = txAgg.reduce<Record<string, Prisma.Decimal>>(
+      (acc, row) => {
+        acc[row.invoiceId!] = row._sum.amount ?? new Prisma.Decimal(0);
+        return acc;
+      },
+      {}
+    );
+
+    const debtors: {
+      invoiceId: string;
+      invoiceNo: string;
+      customerName: string;
+      status: string;
+      balanceDue: number;
+    }[] = [];
+
+    for (const invoice of invoices) {
+      const total = invoice.totalAmount as unknown as Prisma.Decimal;
+      const paid = paidMap[invoice.id] ?? new Prisma.Decimal(0);
+      const balance = total.minus ? total.minus(paid) : total.sub(paid);
+      // Using gt(0.01) to avoid floating rounding noise
+      if (balance.gt(new Prisma.Decimal(0.01))) {
+        debtors.push({
+          invoiceId: invoice.id,
+          invoiceNo: invoice.invoiceNo,
+          customerName: invoice.customer?.name || 'Customer',
+          status: invoice.status,
+          balanceDue: Number(balance.toString()),
+        });
+      }
+    }
+
+    debtors.sort((a, b) => b.balanceDue - a.balanceDue);
+
+    return debtors.slice(0, 10);
   }
 }

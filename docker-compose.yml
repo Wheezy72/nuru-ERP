@@ -1,0 +1,81 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:14
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nuru
+      POSTGRES_USER: nuru
+      POSTGRES_PASSWORD: nuru
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - nuru-net
+
+  backend:
+    image: node:18-alpine
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    depends_on:
+      - postgres
+    environment:
+      # Database
+      DATABASE_URL: postgresql://nuru:nuru@postgres:5432/nuru
+      # Auth
+      JWT_SECRET: change_me_in_production
+      # Frontend origin (Caddy will proxy to this)
+      FRONTEND_ORIGIN: https://nuru.localhost
+      # M-Pesa
+      MPESA_CONSUMER_KEY: your_mpesa_consumer_key
+      MPESA_CONSUMER_SECRET: your_mpesa_consumer_secret
+      MPESA_SHORTCODE: 174379
+      MPESA_PASSKEY: your_mpesa_passkey
+      MPESA_BASE_URL: https://sandbox.safaricom.co.ke
+      MPESA_CALLBACK_URL: https://nuru.localhost/api/payments/mpesa/callback
+      # WhatsApp
+      WHATSAPP_ACCESS_TOKEN: your_whatsapp_access_token
+      WHATSAPP_PHONE_NUMBER_ID: your_whatsapp_phone_number_id
+      # Pesapal (card/bank) gateway
+      PESAPAL_CONSUMER_KEY: your_pesapal_consumer_key
+      PESAPAL_CONSUMER_SECRET: your_pesapal_consumer_secret
+      PESAPAL_BASE_URL: https://cybqa.pesapal.com/pesapalv3
+      PESAPAL_CURRENCY: KES
+      # Backend port (inside container)
+      PORT: 4000
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./:/usr/src/app
+    command: >
+      sh -c "
+        npm install &&
+        npx prisma migrate deploy &&
+        npx ts-node src/server.ts
+      "
+    networks:
+      - nuru-net
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - nuru-net
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  nuru-net:
+    driver: bridge

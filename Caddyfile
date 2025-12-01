@@ -1,0 +1,11 @@
+{
+  # Set a real email when using production domains for Let's Encrypt
+  email you@example.com
+}
+
+# For local development with HTTPS via Caddy's automatic certificates on localhost.
+# In production, replace `nuru.localhost` with your real domain, e.g. `nuru.example.com`.
+nuru.localhost {
+  encode gzip
+  reverse_proxy backend:4000
+}

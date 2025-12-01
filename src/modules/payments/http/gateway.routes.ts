@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { GatewayService } from '../../../shared/payments/GatewayService';
 import { requireAuth } from '../../../shared/middleware/requireRole';
+import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
 const router = Router();
 
@@ -62,7 +63,28 @@ router.post('/callback', async (req, res, next) => {
       statusLower === 'paid' ||
       statusLower === 'completed';
 
+    const prisma = createTenantPrismaClient(tenantId);
+
     if (!isSuccess) {
+      try {
+        await prisma.systemLog.create({
+          data: {
+            tenantId,
+            userId: null,
+            action: 'INVOICE_PAID_CARD_FAILED',
+            entityType: 'Invoice',
+            entityId: invoiceId,
+            metadata: {
+              status,
+              raw: req.body,
+            },
+          },
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to log INVOICE_PAID_CARD_FAILED', err);
+      }
+
       return res.json({ message: 'Callback received, payment not successful' });
     }
 
@@ -72,8 +94,13 @@ router.post('/callback', async (req, res, next) => {
       (req.body?.reference as string | undefined) ||
       'unknown';
 
+    const amount =
+      typeof req.body?.amount === 'number'
+        ? req.body.amount
+        : Number(req.body?.amount || 0);
+
     const gateway = new GatewayService(tenantId);
-    await gateway.markInvoicePaid(invoiceId, gatewayRef);
+    await gateway.markInvoicePaid(invoiceId, gatewayRef, amount);
 
     res.json({ message: 'Callback processed' });
   } catch (err) {

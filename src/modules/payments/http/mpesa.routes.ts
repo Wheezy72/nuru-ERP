@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { MpesaService } from '../../../shared/mpesa/MpesaService';
 import { requireAuth } from '../../../shared/middleware/requireRole';
+import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
 const router = Router();
 
@@ -62,13 +63,54 @@ router.post('/callback', async (req, res, next) => {
       body?.body?.stkCallback?.ResultCode ??
       null;
 
+    const prisma = createTenantPrismaClient(tenantId);
+
     if (resultCode !== 0) {
+      // Log failed attempt for audit trail
+      try {
+        await prisma.systemLog.create({
+          data: {
+            tenantId,
+            userId: null,
+            action: 'INVOICE_PAID_MPESA_FAILED',
+            entityType: 'Invoice',
+            entityId: invoiceId,
+            metadata: {
+              resultCode,
+              raw: body,
+            },
+          },
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to log INVOICE_PAID_MPESA_FAILED', err);
+      }
+
       // Non-successful payment; acknowledge without changing invoice
       return res.json({ message: 'Callback received, payment not successful' });
     }
 
+    // Extract amount and receipt from callback metadata
+    const items =
+      body?.Body?.stkCallback?.CallbackMetadata?.Item ??
+      body?.body?.stkCallback?.CallbackMetadata?.Item ??
+      [];
+    let amount = 0;
+    let receipt: string | undefined;
+
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        if (item.Name === 'Amount') {
+          amount = Number(item.Value || 0);
+        }
+        if (item.Name === 'MpesaReceiptNumber') {
+          receipt = String(item.Value || '');
+        }
+      }
+    }
+
     const mpesa = new MpesaService(tenantId);
-    await mpesa.markInvoicePaid(invoiceId);
+    await mpesa.markInvoicePaid(invoiceId, amount, receipt);
 
     res.json({ message: 'Callback processed' });
   } catch (err) {

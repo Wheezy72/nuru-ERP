@@ -97,10 +97,33 @@ export class MpesaService {
       }
     );
 
-    return response.data;
+    const data = response.data;
+
+    try {
+      await this.prisma.systemLog.create({
+        data: {
+          tenantId: this.tenantId,
+          userId: null,
+          action: 'MPESA_STK_INITIATED',
+          entityType: 'Invoice',
+          entityId: invoiceId,
+          metadata: {
+            amount,
+            phoneNumber,
+            requestPayload: payload,
+            response: data,
+          },
+        },
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to log MPESA_STK_INITIATED', err);
+    }
+
+    return data;
   }
 
-  async markInvoicePaid(invoiceId: string) {
+  async markInvoicePaid(invoiceId: string, amount: number, mpesaReceipt?: string) {
     const prisma = this.prisma;
 
     const invoice = await prisma.invoice.findFirst({
@@ -115,13 +138,67 @@ export class MpesaService {
       return;
     }
 
-    if (invoice.status === 'Paid') {
+    if (amount <= 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `Ignoring M-Pesa callback with non-positive amount for invoice ${invoiceId}`
+      );
       return;
+    }
+
+    // Idempotency: do not double-record the same M-Pesa receipt
+    if (mpesaReceipt) {
+      const existingTx = await prisma.transaction.findFirst({
+        where: {
+          tenantId: this.tenantId,
+          invoiceId: invoice.id,
+          reference: mpesaReceipt,
+          type: 'Credit',
+        },
+      });
+      if (existingTx) {
+        return invoice;
+      }
+    }
+
+    const existingAgg = await prisma.transaction.aggregate({
+      where: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        type: 'Credit',
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    const alreadyPaid = existingAgg._sum.amount ?? new Prisma.Decimal(0);
+    const paymentAmount = new Prisma.Decimal(amount);
+    const newPaidTotal = alreadyPaid.add(paymentAmount);
+
+    const totalAmountDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+
+    let newStatus = invoice.status;
+    if (newPaidTotal.gte(totalAmountDecimal)) {
+      newStatus = 'Paid';
+    } else if (newPaidTotal.gt(0)) {
+      newStatus = 'Partial';
     }
 
     const updated = await prisma.invoice.update({
       where: { id: invoice.id },
-      data: { status: 'Paid' },
+      data: { status: newStatus },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        accountId: null,
+        amount: paymentAmount,
+        type: 'Credit',
+        reference: mpesaReceipt || `M-Pesa payment for ${invoice.invoiceNo}`,
+      },
     });
 
     await prisma.systemLog.create({
@@ -133,7 +210,12 @@ export class MpesaService {
         entityId: invoice.id,
         metadata: {
           previousStatus: invoice.status,
-          newStatus: 'Paid',
+          newStatus: newStatus,
+          amount: paymentAmount,
+          totalAmount: totalAmountDecimal,
+          alreadyPaid,
+          newPaidTotal,
+          mpesaReceipt,
         },
       },
     });

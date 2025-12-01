@@ -60,6 +60,14 @@ type TaxLiability = {
   zeroRated: { amount: number };
 };
 
+type Debtor = {
+  invoiceId: string;
+  invoiceNo: string;
+  customerName: string;
+  status: string;
+  balanceDue: number;
+};
+
 type DashboardSummary = {
   metrics: DashboardMetrics;
   cashFlow: CashFlow;
@@ -67,6 +75,7 @@ type DashboardSummary = {
   stockAlerts: StockAlert[];
   insights: Insight[];
   taxLiability: TaxLiability;
+  debtors: Debtor[];
 };
 
 export function DashboardPage() {
@@ -80,44 +89,31 @@ export function DashboardPage() {
     cashFlow: boolean;
     ai: boolean;
     tax: boolean;
+    debtors: boolean;
     chama: boolean;
     stock: boolean;
   }>(() => {
+    const defaultState = {
+      sales: true,
+      cash: true,
+      cashFlow: true,
+      ai: true,
+      tax: true,
+      debtors: true,
+      chama: true,
+      stock: true,
+    };
     if (typeof window === 'undefined') {
-      return {
-        sales: true,
-        cash: true,
-        cashFlow: true,
-        ai: true,
-        tax: true,
-        chama: true,
-        stock: true,
-      };
+      return defaultState;
     }
     try {
       const raw = window.localStorage.getItem('dashboard_visible_cards');
       if (!raw) {
-        return {
-          sales: true,
-          cash: true,
-          cashFlow: true,
-          ai: true,
-          tax: true,
-          chama: true,
-          stock: true,
-        };
+        return defaultState;
       }
-      return JSON.parse(raw);
+      return { ...defaultState, ...JSON.parse(raw) };
     } catch {
-      return {
-        sales: true,
-        cash: true,
-        cashFlow: true,
-        ai: true,
-        tax: true,
-        chama: true,
-        stock: true,
-      };
+      return defaultState;
     }
   });
 
@@ -496,6 +492,76 @@ export function DashboardPage() {
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                   {isLoading ? 'Loading...' : 'No Chama data yet.'}
                 </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {visibleCards.debtors && (
+          <Card className="md:col-span-2 p-4 flex flex-col">
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold text-foreground">
+              <span>Debtors</span>
+              <span className="text-[0.7rem] text-muted-foreground">
+                Customers with outstanding balances
+              </span>
+            </div>
+            <div className="flex-1 space-y-2 overflow-auto text-xs">
+              {isLoading ? (
+                <div className="text-xs text-muted-foreground">Loading...</div>
+              ) : !summary || !summary.debtors || summary.debtors.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  No outstanding balances. All invoices are fully paid.
+                </div>
+              ) : (
+                summary.debtors.slice(0, 6).map((debtor) => (
+                  <div
+                    key={debtor.invoiceId}
+                    className="flex items-center justify-between rounded-md bg-background px-3 py-2 text-xs"
+                  >
+                    <div>
+                      <div className="font-medium text-foreground">
+                        {debtor.customerName}
+                      </div>
+                      <div className="text-[0.7rem] text-muted-foreground">
+                        Invoice {debtor.invoiceNo} • Status {debtor.status}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <div className="font-semibold text-amber-700">
+                          {debtor.balanceDue.toLocaleString(undefined, {
+                            style: 'currency',
+                            currency: 'KES',
+                          })}
+                        </div>
+                        <div className="text-[0.7rem] text-muted-foreground">
+                          Balance due
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[0.7rem]"
+                        onClick={async () => {
+                          try {
+                            await apiClient.post(
+                              `/invoices/${debtor.invoiceId}/remind`,
+                              {}
+                            );
+                            alert('Reminder sent via WhatsApp (if configured).');
+                          } catch (err: any) {
+                            alert(
+                              err?.response?.data?.message ||
+                                'Failed to send reminder.'
+                            );
+                          }
+                        }}
+                      >
+                        Remind
+                      </Button>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </Card>

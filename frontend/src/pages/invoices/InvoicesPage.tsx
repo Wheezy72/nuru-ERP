@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '@/lib/apiClient';
 import { DataTable } from '@/components/DataTable';
 import { Card } from '@/components/ui/card';
@@ -33,6 +34,7 @@ type InvoiceListResponse = {
 };
 
 export function InvoicesPage() {
+  const navigate = useNavigate();
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 25 });
   const [search, setSearch] = React.useState('');
   const [status, setStatus] = React.useState<string | undefined>(undefined);
@@ -67,7 +69,22 @@ export function InvoicesPage() {
   });
 
   const columns: ColumnDef<Invoice>[] = [
-    { accessorKey: 'invoiceNo', header: 'Invoice #' },
+    {
+      accessorKey: 'invoiceNo',
+      header: 'Invoice #',
+      cell: ({ row }) => {
+        const invoice = row.original;
+        return (
+          <button
+            type="button"
+            className="text-xs font-medium text-emerald-700 hover:underline"
+            onClick={() => navigate(`/invoices/${invoice.id}`)}
+          >
+            {invoice.invoiceNo}
+          </button>
+        );
+      },
+    },
     {
       accessorKey: 'customer.name',
       header: 'Customer',
@@ -91,8 +108,10 @@ export function InvoicesPage() {
       cell: ({ row }) => {
         const invoice = row.original;
         const amountNumber = Number(invoice.totalAmount);
-        const isDraftOrPosted =
-          invoice.status === 'Draft' || invoice.status === 'Posted';
+        const isPayableStatus =
+          invoice.status === 'Draft' ||
+          invoice.status === 'Posted' ||
+          invoice.status === 'Partial';
 
         const handleMpesaClick = async () => {
           try {
@@ -184,7 +203,7 @@ export function InvoicesPage() {
               size="sm"
               className="bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={handleMpesaClick}
-              disabled={!isDraftOrPosted}
+              disabled={!isPayableStatus}
             >
               Pay with M-Pesa
             </Button>
@@ -193,7 +212,7 @@ export function InvoicesPage() {
               variant="outline"
               className="border-slate-500 bg-slate-600 text-white hover:bg-slate-700 hover:text-white"
               onClick={handleCardClick}
-              disabled={!isDraftOrPosted}
+              disabled={!isPayableStatus}
             >
               Pay with Card
             </Button>
@@ -205,6 +224,14 @@ export function InvoicesPage() {
               disabled={invoice.status === 'Paid'}
             >
               Record External
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[0.7rem]"
+              onClick={() => navigate(`/invoices/${invoice.id}`)}
+            >
+              View
             </Button>
           </div>
         );
@@ -296,6 +323,7 @@ export function InvoicesPage() {
             <option value="">All statuses</option>
             <option value="Draft">Draft</option>
             <option value="Posted">Posted</option>
+            <option value="Partial">Partial</option>
             <option value="Paid">Paid</option>
           </select>
           <input

@@ -58,7 +58,7 @@ async function createTenants() {
 
   const stMarys = await prisma.tenant.create({
     data: {
-      name: \"St. Mary's Academy\",
+      name: "St. Mary's Academy",
       code: 'ST-MARYS-ACADEMY',
       isActive: true,
       locale: 'en-KE',
@@ -70,7 +70,20 @@ async function createTenants() {
     },
   });
 
-  return { nuru, wamama, safari, stMarys };
+  const greenLeaf = await prisma.tenant.create({
+    data: {
+      name: 'GreenLeaf Agrovet & Vet',
+      code: 'GREENLEAF-AGROVET',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+      features: {
+        type: 'AGROVET',
+      },
+    },
+  });
+
+  return { nuru, wamama, safari, stMarys, greenLeaf };
 }
 
 async function createUsers(tenantId: string) {
@@ -733,6 +746,175 @@ async function seedChama(tenantId: string) {
   }
 }
 
+async function seedAgrovetTenant(tenantId: string) {
+  // Agrovet units
+  const piece = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Piece',
+      category: 'Unit',
+      ratio: 1,
+    },
+  });
+  const kilogram = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Kilogram',
+      category: 'Weight',
+      ratio: 1,
+    },
+  });
+
+  const location = await prisma.location.create({
+    data: {
+      tenantId,
+      name: 'Agrovet Shop',
+      code: 'AG-SHOP',
+      isActive: true,
+    },
+  });
+
+  // Products with batches and expiries
+  const tickGrease = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Tick Grease 250g (Exp 2025)',
+      sku: 'TICK-GREASE-250',
+      defaultUomId: piece.id,
+      category: 'Vet',
+      minStockQuantity: 5,
+    },
+  });
+
+  const dapFertilizer = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'DAP Fertilizer 50kg',
+      sku: 'DAP-50KG',
+      defaultUomId: kilogram.id,
+      category: 'Fertilizer',
+      minStockQuantity: 10,
+    },
+  });
+
+  const cowSalt = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Cow Salt 2kg',
+      sku: 'COW-SALT-2KG',
+      defaultUomId: kilogram.id,
+      category: 'Supplement',
+      minStockQuantity: 10,
+    },
+  });
+
+  // Tick grease single batch expiry mid-2025
+  const tickBatch = await prisma.productBatch.create({
+    data: {
+      tenantId,
+      productId: tickGrease.id,
+      batchNumber: 'TG-2025-01',
+      expiryDate: new Date(new Date().getFullYear() + 1, 5, 30),
+      uomId: piece.id,
+    },
+  });
+
+  await prisma.stockQuant.create({
+    data: {
+      tenantId,
+      productId: tickGrease.id,
+      locationId: location.id,
+      batchId: tickBatch.id,
+      uomId: piece.id,
+      quantity: 120,
+    },
+  });
+
+  // DAP fertilizer with two batches to demonstrate FEFO
+  const dapBatchEarly = await prisma.productBatch.create({
+    data: {
+      tenantId,
+      productId: dapFertilizer.id,
+      batchNumber: 'DAP-2024-01',
+      expiryDate: new Date(new Date().getFullYear(), 2, 31),
+      uomId: kilogram.id,
+    },
+  });
+
+  const dapBatchLate = await prisma.productBatch.create({
+    data: {
+      tenantId,
+      productId: dapFertilizer.id,
+      batchNumber: 'DAP-2025-01',
+      expiryDate: new Date(new Date().getFullYear() + 1, 10, 30),
+      uomId: kilogram.id,
+    },
+  });
+
+  await prisma.stockQuant.createMany({
+    data: [
+      {
+        tenantId,
+        productId: dapFertilizer.id,
+        locationId: location.id,
+        batchId: dapBatchEarly.id,
+        uomId: kilogram.id,
+        quantity: 500,
+      },
+      {
+        tenantId,
+        productId: dapFertilizer.id,
+        locationId: location.id,
+        batchId: dapBatchLate.id,
+        uomId: kilogram.id,
+        quantity: 800,
+      },
+    ],
+  });
+
+  // Cow salt with a single batch
+  const cowSaltBatch = await prisma.productBatch.create({
+    data: {
+      tenantId,
+      productId: cowSalt.id,
+      batchNumber: 'CS-2024-01',
+      expiryDate: new Date(new Date().getFullYear(), 11, 31),
+      uomId: kilogram.id,
+    },
+  });
+
+  await prisma.stockQuant.create({
+    data: {
+      tenantId,
+      productId: cowSalt.id,
+      locationId: location.id,
+      batchId: cowSaltBatch.id,
+      uomId: kilogram.id,
+      quantity: 300,
+    },
+  });
+
+  // A few agrovet customers
+  await prisma.customer.createMany({
+    data: [
+      {
+        tenantId,
+        name: 'Kipkorir Dairy Farm',
+        phone: randomKenyanPhone(),
+        email: 'accounts@kipkorir-dairy.co.ke',
+        kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+      {
+        tenantId,
+        name: 'Mama Mumbi Agrodealer',
+        phone: randomKenyanPhone(),
+        email: 'mumbi.agro@example.com',
+        kraPin: `A${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+    ],
+  });
+}
+
 async function main() {
   console.log('Seeding database with realistic Kenyan data...');
 
@@ -754,12 +936,13 @@ async function main() {
   await prisma.user.deleteMany({});
   await prisma.tenant.deleteMany({});
 
-  const { nuru, wamama, safari, stMarys } = await createTenants();
+  const { nuru, wamama, safari, stMarys, greenLeaf } = await createTenants();
 
   await createUsers(nuru.id);
   await createUsers(wamama.id);
   await createUsers(safari.id);
   await createUsers(stMarys.id);
+  await createUsers(greenLeaf.id);
   await createDefaultAdmin(nuru.id);
 
   const { products, location } = await seedInventory(nuru.id);
@@ -771,6 +954,8 @@ async function main() {
   await seedFleetTenant(safari.id);
   // School tenant seed
   await seedSchoolTenant(stMarys.id);
+  // Agrovet tenant seed
+  await seedAgrovetTenant(greenLeaf.id);
 
   console.log('Seeding complete.');
 }

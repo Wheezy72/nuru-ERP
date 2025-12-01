@@ -24,6 +24,7 @@ Verticals supported:
 - Chama / SACCO (Wamama Pamoja)
 - Fleet & Plant Hire (Safari Haulage)
 - Schools (St. Mary’s Academy)
+- Agrovet & Vet (GreenLeaf Agrovet & Vet)
 
 ---
 
@@ -194,13 +195,26 @@ Backend flow (summary):
   - Uses `MpesaService.initiateStkPush`.
   - Builds password and timestamp from `MPESA_SHORTCODE` + `MPESA_PASSKEY`.
   - Sets callback URL as `MPESA_CALLBACK_URL?tenantId=...&invoiceId=...`.
+  - Logs `MPESA_STK_INITIATED` in `SystemLog` including amount, phone, and raw M-Pesa response.
 
 - Callback:
 
   - Endpoint: `POST /api/payments/mpesa/callback`
-  - If ResultCode == 0, the invoice is marked as `Paid` and a `SystemLog` entry is written:
+  - If ResultCode == 0:
 
-    - `action: INVOICE_PAID_MPESA`
+    - Extracts `Amount` and `MpesaReceiptNumber` from callback metadata.
+    - Creates a `Transaction` row (type `Credit`) linked to the invoice.
+    - Updates invoice status based on how much has been paid so far:
+
+      - `Paid` if total paid ≥ invoice total.
+      - `Partial` if 0 < total paid < invoice total.
+
+    - Writes `INVOICE_PAID_MPESA` in `SystemLog` with amounts and receipt.
+
+  - If ResultCode != 0:
+
+    - Writes `INVOICE_PAID_MPESA_FAILED` with failure metadata.
+    - Does not change the invoice.
 
 Frontend:
 
@@ -255,13 +269,22 @@ Backend:
     - `tenantId` and `invoiceId` (via query or body fields like `merchant_reference`).
     - `status` / `payment_status` / `payment_status_description`.
     - `transaction_id` / `order_tracking_id` / `reference`.
+    - `amount` (where provided by the gateway).
   - On success:
-    - Invokes `GatewayService.markInvoicePaid(invoiceId, gatewayRef)`.
-    - Marks invoice as `Paid`.
+    - Invokes `GatewayService.markInvoicePaid(invoiceId, gatewayRef, amount)`.
+    - Creates a `Transaction` row (type `Credit`) with the paid amount.
+    - Updates invoice status to:
+
+      - `Paid` if total paid ≥ invoice total.
+      - `Partial` if 0 < total paid < invoice total.
+
     - Writes `SystemLog` with:
 
       - `action: INVOICE_PAID_CARD`
-      - Metadata includes `gatewayRef`.
+      - Metadata includes `gatewayRef`, amount, and running totals.
+
+  - On failure:
+    - Writes `INVOICE_PAID_CARD_FAILED` in `SystemLog` with the raw payload.
 
 Frontend:
 
@@ -342,7 +365,121 @@ Best practices:
 - Always run stocktakes outside peak hours.
 - Use `minStockQuantity` to drive replenishment decisions — the dashboard stock alerts will show low-stock items.
 
-### 5.2 Fleet Invoicing (Safari Haulage)
+### 5.2 Credit Sales & Debtors (Cross-Tenant)
+
+Context:
+
+- Many African businesses sell “on credit” (buy now, pay later).
+- Nuru treats credit movements as `Transaction` entries against invoices and updates invoice status based on how much has been paid.
+
+Concepts:
+
+- Invoice statuses relevant to credit:
+
+  - `Draft` – not yet posted; no stock movement.
+  - `Posted` – goods/services delivered; debtor balance created.
+  - `Partial` – some payments received, but balance still outstanding.
+  - `Paid` – fully settled.
+
+- Payments:
+
+  - M-Pesa STK Push (mobile money).
+  - Card/Bank payments via Pesapal.
+  - Manual “external” payments (EFT, cheque, cash at bank).
+
+How it works:
+
+1. When an invoice is posted:
+
+   - Endpoint: `POST /api/invoices/:id/post`
+   - Status becomes `Posted`.
+   - Stock is decremented.
+   - `INVOICE_POSTED` is logged.
+
+2. When any payment is recorded (M-Pesa, card, or manual):
+
+   - A `Transaction` of type `Credit` is created with amount and reference.
+   - Total paid = sum of all `Credit` transactions for that invoice.
+   - `Invoice.status` is updated:
+
+     - `Paid` if total paid ≥ totalAmount.
+     - `Partial` if 0 < total paid < totalAmount.
+     - `Posted` if no payments yet.
+
+3. Manual payments:
+
+   - Endpoint: `POST /api/invoices/:id/manual-payment`
+   - Body:
+
+     - `amount`: numeric (KES).
+     - `method`: string (EFT, Cheque, Cash).
+     - `reference` (optional).
+     - `paidAt` (date string, `YYYY-MM-DD`).
+
+   - Creates a `Credit` transaction and sets status to `Partial` or `Paid`.
+   - Logs `INVOICE_PAID_MANUAL` with `note: Manual Entry - Verification Needed`.
+
+Debtors view:
+
+- Backend:
+
+  - `DashboardService.getSummary` computes a `debtors` array:
+
+    - For every invoice (excluding Draft), it computes:
+
+      - `balanceDue = totalAmount - sum(Credit transactions)`.
+
+    - If `balanceDue > 0.01`, that invoice is included as a debtor.
+
+- Frontend:
+
+  - Dashboard has a “Debtors” card:
+
+    - Shows top invoices with outstanding balances:
+
+      - Customer name.
+      - Invoice number.
+      - Status.
+      - Balance due.
+
+    - “Remind” button per invoice:
+
+      - Calls `POST /api/invoices/:id/remind`.
+      - Backend loads the invoice, computes balanceDue, and sends a WhatsApp message:
+
+        - `Hello [Name], reminder of outstanding balance: KES [Amount] for Invoice [No].`
+
+      - Logs `INVOICE_REMINDER_SENT` in `SystemLog`.
+
+Credit workflow (cashier perspective):
+
+1. Sell on credit:
+
+   - Create invoice (POS or Invoices module).
+   - Post invoice (status `Posted`).
+
+2. Take a part-payment:
+
+   - Use “Pay with M-Pesa” or “Pay with Card” for a remote payment, or:
+   - Use “Record External” when a transfer hits the bank.
+
+3. See status update:
+
+   - Invoice becomes `Partial` if not fully settled.
+   - Once total payments catch up with the totalAmount, status becomes `Paid`.
+
+4. Chase debtors:
+
+   - Go to Dashboard → Debtors card.
+   - Trigger WhatsApp reminders for selected invoices.
+
+This gives you:
+
+- Money In: tracked via Transactions.
+- Money Owed: visible via Debtors.
+- Money Disputes: resolved via the Payments & History tab (see below).
+
+### 5.3 Fleet Invoicing (Safari Haulage)
 
 Context:
 
@@ -405,7 +542,102 @@ Steps:
      - Daily cashflow chart (now aligned to East Africa Time).
      - Tax liability (VAT computations).
 
-### 5.3 Chama Loans (Wamama Pamoja)
+### 5.3 Payments & History Tab (“Truth View”)
+
+Context:
+
+- Cashiers and owners often face disputes:
+
+  - “I sent the money.”
+  - “The M-Pesa SMS came, but the system still shows unpaid.”
+
+- The Payments & History tab exposes the raw ledger behind every invoice.
+
+Where to find it:
+
+- Frontend route: `/invoices/:id`
+- From the Invoices list:
+
+  - Click the invoice number (now a link), or
+  - Use the “View” button in the Actions column.
+
+Tabs:
+
+1. Summary
+
+   - Header:
+
+     - Invoice number, customer, issue date, status.
+     - Totals:
+
+       - Total amount.
+       - Paid amount (sum of all `Credit` transactions).
+       - Balance due.
+
+   - Line items:
+
+     - Product name and unit.
+     - Quantity.
+     - Unit price.
+     - Line total.
+
+   - Customer pane:
+
+     - Name, phone, email.
+     - Due date (if set).
+
+2. Payments & History
+
+   - Payments section:
+
+     - Lists all `Transaction` records of type `Credit` for this invoice.
+     - Columns:
+
+       - Date/time.
+       - Amount.
+       - Type (Credit).
+       - Reference (e.g. `M-Pesa ABC123`, `Manual EFT payment for INV-123`).
+
+   - Audit Log section:
+
+     - Lists all `SystemLog` entries for this invoice:
+
+       - `INVOICE_POSTED`
+       - `MPESA_STK_INITIATED`
+       - `INVOICE_PAID_MPESA`
+       - `INVOICE_PAID_MPESA_FAILED`
+       - `INVOICE_PAID_CARD`
+       - `INVOICE_PAID_CARD_FAILED`
+       - `INVOICE_PAID_MANUAL`
+       - `INVOICE_REMINDER_SENT`
+       - Any other invoice-related actions.
+
+     - Shows timestamp, action, and JSON-encoded metadata for full transparency.
+
+Usage during disputes:
+
+1. Customer says they paid:
+
+   - Open the invoice detail.
+   - Switch to Payments & History.
+   - Check:
+
+     - Is there a `Credit` transaction for that amount?
+     - Are there `INVOICE_PAID_MPESA` / `INVOICE_PAID_CARD` actions?
+     - Are there any failure logs?
+
+2. If money appears in M-Pesa but not in Nuru:
+
+   - Look for `INVOICE_PAID_MPESA_FAILED` entries.
+   - Check metadata for wrong invoice/tenant mapping.
+   - Correct configs (e.g. wrong `MPESA_CALLBACK_URL`) and resend STK if necessary.
+
+3. If bank transfer was done:
+
+   - Use “Record External” to capture the payment.
+   - It will appear immediately in the Payments section, and the invoice balance will update.
+
+### 5.4 Chama Loans (Wamama Pamoja)
 
 Context:
 
@@ -467,10 +699,94 @@ Steps:
      - Dead stock (for retail tenants).
      - Stockout predictions.
 
+### 5.5 Agrovet Expiry & FEFO (GreenLeaf Agrovet & Vet)
+
+Context:
+
+- Agrovet shops handle regulated products (tick grease, fertilizers, vet drugs) that must not be sold after expiry.
+- Nuru’s `ProductBatch` + `StockQuant` model is used to track expiry and enable FEFO (First-Expired-First-Out) behaviour.
+
+Seeded tenant:
+
+- `GreenLeaf Agrovet & Vet` is created by the seed script with:
+
+  - Units of measure:
+
+    - `Piece` (for items like tick grease).
+    - `Kilogram` (for fertilizer and salt).
+
+  - Location:
+
+    - `Agrovet Shop` (`AG-SHOP`).
+
+  - Products and batches:
+
+    - Tick Grease 250g (Exp 2025):
+
+      - Product: `Tick Grease 250g (Exp 2025)`.
+      - Batch: `TG-2025-01` with `expiryDate` in mid-2025.
+      - Stock: 120 pieces.
+
+    - DAP Fertilizer 50kg:
+
+      - Product: `DAP Fertilizer 50kg`.
+      - Batches:
+
+        - `DAP-2024-01` – earlier expiry.
+        - `DAP-2025-01` – later expiry.
+
+      - Stock spread across both batches to demonstrate FEFO.
+
+    - Cow Salt 2kg:
+
+      - Product: `Cow Salt 2kg`.
+      - Batch: `CS-2024-01` with an end-of-year expiry.
+      - Stock: 300 kg (in 2kg units).
+
+How to use it:
+
+1. View batches and expiries:
+
+   - Query `ProductBatch` for the tenant:
+
+     - Shows `batchNumber`, `expiryDate`, and `uomId`.
+
+   - Query `StockQuant` grouped by `productId`, `locationId`, and `batchId`:
+
+     - Shows quantity per batch at the Agrovet Shop.
+
+2. FEFO in practice:
+
+   - When selling or adjusting stock at an Agrovet:
+
+     - Always choose the batch with the earliest `expiryDate` that still has positive quantity.
+     - Sell/adjust from that batch first, then move to the next batch.
+
+   - This behaviour can be wired into custom POS/dispensing flows by:
+
+     - Selecting `StockQuant` rows ordered by `batch.expiryDate ASC`.
+     - Decrementing quantities across batches until the requested quantity is fulfilled.
+
+3. Why this matters:
+
+   - Regulators and vets often require proof that expired product was not sold.
+   - By keeping all movements batch-linked:
+
+     - You can report:
+
+       - Stock on hand per batch.
+       - Quantities sold per batch.
+       - Wastage/write-offs per batch (e.g., when destroying expired stock).
+
+   - The same primitives generalise to:
+
+     - Human pharmacies.
+     - Seed shops.
+     - Vaccination campaigns.
+
 ---
 
-## 6. Maintenance & Operations
-
+## 6
 ### 6.1 Running Migrations
 
 When the schema changes:
@@ -505,12 +821,13 @@ npx ts-node prisma/seed.ts
 This:
 
 - Clears core tables (SystemLog, Transactions, Invoices, Stock, Accounts, Loans, Members, Tenants, etc.).
-- Creates four tenants:
+- Creates five tenants:
 
   - Nuru Hardware (retail)
   - Wamama Pamoja (Chama)
   - Safari Haulage & Plant Hire (fleet)
   - St. Mary’s Academy (school)
+  - GreenLeaf Agrovet & Vet (agrovet / vet shop)
 
 - Seeds:
 
@@ -519,6 +836,7 @@ This:
   - Chama members, accounts, and loans.
   - Fleet services, customers, invoices, and transactions.
   - School fee products and students.
+  - Agrovet products with expiry-aware batches (Tick Grease, DAP Fertilizer, Cow Salt) for FEFO-style stock management.
 
 ### 6.3 Health Check Script
 
@@ -528,11 +846,21 @@ What it does:
 
 - Verifies presence of critical env vars:
 
-  - `DATABASE_URL`, `JWT_SECRET`, `MPESA_CONSUMER_KEY`, `PESAPAL_CONSUMER_KEY`.
+  - Core: `DATABASE_URL`, `JWT_SECRET`.
+  - M-Pesa: `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`.
+  - WhatsApp: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`.
+  - Card/Banks (Pesapal in this deployment): `PESAPAL_CONSUMER_KEY`, `PESAPAL_CONSUMER_SECRET`.
 
-- Pings the database:
+- Pings the database and runs integrity checks:
 
-  - Runs `SELECT 1` via Prisma.
+  - Connectivity: runs `SELECT 1` via Prisma.
+  - Negative stock:
+
+    - Flags any `StockQuant` rows where `quantity < 0`.
+
+  - Orphaned cashflow:
+
+    - Flags any `Invoice` with status `Posted` that has no linked `Transaction` entries, indicating “missing money”.
 
 - Scans code for `TODO` comments.
 
@@ -544,8 +872,8 @@ npx ts-node scripts/health-check.ts
 
 Exit codes:
 
-- `0`: OK (env + DB connectivity).
-- `1`: Missing env vars or DB unreachable.
+- `0`: OK (env, DB connectivity, and integrity).
+- `1`: Missing env vars, DB unreachable, negative stock, or posted invoices without transactions.
 
 ### 6.4 Updating the App
 

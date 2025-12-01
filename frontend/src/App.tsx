@@ -6,6 +6,7 @@ import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { ProductsPage } from '@/pages/inventory/ProductsPage';
 import { CustomersPage } from '@/pages/customers/CustomersPage';
 import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
+import { InvoiceDetailPage } from '@/pages/invoices/InvoiceDetailPage';
 import { MembersPage } from '@/pages/chama/MembersPage';
 import { AuditLogPage } from '@/pages/settings/AuditLogPage';
 import { LoginPage } from '@/pages/auth/LoginPage';
@@ -27,6 +28,7 @@ export function App() {
           <Route path="/inventory/products" element={<ProductsPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
+          <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
           <Route path="/payroll/casuals" element={<PayCasualsPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />

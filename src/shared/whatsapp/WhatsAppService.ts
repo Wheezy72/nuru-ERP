@@ -32,7 +32,7 @@ export class WhatsAppService {
     return value;
   }
 
-  private async sendText(toPhone: string, body: string) {
+  async sendText(toPhone: string, body: string) {
     if (!toPhone) {
       return;
     }

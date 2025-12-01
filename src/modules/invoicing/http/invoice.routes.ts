@@ -35,6 +35,28 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+router.get('/:id', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InvoiceService(tenantId);
+    const result = await service.getInvoiceWithBalances(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/history', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InvoiceService(tenantId);
+    const result = await service.getInvoiceHistory(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
@@ -99,6 +121,23 @@ router.post('/:id/manual-payment', async (req, res, next) => {
     });
 
     res.json(invoice);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/remind', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InvoiceService(tenantId);
+
+    const userIdHeader = req.headers['x-user-id'];
+    const userId =
+      (Array.isArray(userIdHeader) ? userIdHeader[0] : userIdHeader)?.toString() ||
+      null;
+
+    await service.sendPaymentReminder(req.params.id, userId);
+    res.json({ message: 'Reminder sent (if WhatsApp is configured).' });
   } catch (err) {
     next(err);
   }
