@@ -53,6 +53,8 @@ model Tenant {
   billsOfMaterial     BillOfMaterial[]
   billOfMaterialItems BillOfMaterialItem[]
   productionOrders    ProductionOrder[]
+   assets              Asset[]
+   depreciationRuns    DepreciationRun[]
 }
 
 
@@ -614,6 +616,42 @@ model GLJournalLine {
 
   @@index([tenantId])
   @@index([tenantId, journalEntryId])
+}
+
+/**
+ * Fixed Asset registry entry. Depreciation is posted via GLJournalEntry.
+ */
+model Asset {
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenantId              String   @db.Uuid
+  name                  String
+  purchaseDate          DateTime
+  purchaseCost          Decimal
+  lifespanYears         Int
+  salvageValue          Decimal   @default(0)
+  accumulatedDepreciation Decimal @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant                Tenant    @relation(fields: [tenantId], references: [id])
+  depreciationRuns      DepreciationRun[]
+
+  @@index([tenantId])
+}
+
+/**
+ * Tracks when depreciation was last run for a tenant/month.
+ */
+model DepreciationRun {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  period    String   // e.g. "2024-09"
+  runAt     DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, period])
 }
 
 model BillOfMaterial {

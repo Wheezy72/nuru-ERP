@@ -9,6 +9,8 @@ type DefaultAccounts = {
   inventory: { id: string };
   sales: { id: string };
   cogs: { id: string };
+  depreciationExpense: { id: string };
+  accumulatedDepreciation: { id: string };
 };
 
 export class AccountingService {
@@ -33,7 +35,7 @@ export class AccountingService {
     }[] = [
       {
         code: '1000',
-        name: 'Cash',
+        name: 'Cash at Bank',
         type: GLAccountType.ASSET,
         key: 'cash',
       },
@@ -60,6 +62,18 @@ export class AccountingService {
         name: 'Cost of Goods Sold',
         type: GLAccountType.EXPENSE,
         key: 'cogs',
+      },
+      {
+        code: '6100',
+        name: 'Depreciation Expense',
+        type: GLAccountType.EXPENSE,
+        key: 'depreciationExpense',
+      },
+      {
+        code: '1500',
+        name: 'Accumulated Depreciation',
+        type: GLAccountType.ASSET,
+        key: 'accumulatedDepreciation',
       },
     ];
 
@@ -147,6 +161,72 @@ export class AccountingService {
             {
               tenantId: this.tenantId,
               accountId: accounts.sales.id,
+              debit: new Prisma.Decimal(0),
+              credit: totalAmount,
+            },
+          ],
+        },
+      },
+    });
+
+    return entry;
+  }
+
+  /**
+   * Record a cash receipt against receivables when an invoice is fully paid:
+   *   DR Cash at Bank
+   *   CR Accounts Receivable
+   *
+   * Called when invoice status transitions to Paid.
+   */
+  async recordInvoicePaid(invoiceId: string) {
+    const prisma = this.prisma;
+
+    const invoice = await prisma.invoice.findFirst({
+      where: { id: invoiceId, tenantId: this.tenantId },
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found for GL cash receipt');
+    }
+
+    const totalAmount = invoice.totalAmount as unknown as Prisma.Decimal;
+    if (totalAmount.lte(0)) {
+      return null;
+    }
+
+    // Idempotency: if a cash receipt journal exists for this invoice, do nothing.
+    const existing = await prisma.gLJournalEntry.findFirst({
+      where: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        description: { contains: 'Invoice paid', mode: 'insensitive' },
+      },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const accounts = await this.ensureDefaultAccounts(prisma);
+
+    const entry = await prisma.gLJournalEntry.create({
+      data: {
+        tenantId: this.tenantId,
+        date: invoice.updatedAt || invoice.issueDate,
+        description: `Invoice ${invoice.invoiceNo} paid`,
+        invoiceId: invoice.id,
+        lines: {
+          create: [
+            {
+              tenantId: this.tenantId,
+              accountId: accounts.cash.id,
+              debit: totalAmount,
+              credit: new Prisma.Decimal(0),
+            },
+            {
+              tenantId: this.tenantId,
+              accountId: accounts.receivables.id,
               debit: new Prisma.Decimal(0),
               credit: totalAmount,
             },
