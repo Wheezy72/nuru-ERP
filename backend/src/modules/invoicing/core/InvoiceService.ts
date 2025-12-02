@@ -3,6 +3,7 @@ import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { InventoryService } from '../../inventory/core/InventoryService';
 import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 import { LoyaltyService } from '../../customers/core/LoyaltyService';
+import { AccountingService } from '../../accounting/core/AccountingService';
 import { computeTaxBreakdown } from './taxMath';
 
 export class InvoiceService {
@@ -179,6 +180,15 @@ export class InvoiceService {
         },
       },
     });
+
+    // Record GL entry for the posted invoice (best-effort; do not block posting)
+    try {
+      const accounting = new AccountingService(this.tenantId);
+      await accounting.recordInvoicePosted(invoice.id);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to record GL entry for invoice', invoice.id, err);
+    }
 
     // Fire-and-forget WhatsApp notification; failure should not block posting
     try {

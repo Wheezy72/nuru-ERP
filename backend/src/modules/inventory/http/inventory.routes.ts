@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { InventoryService } from '../core/InventoryService';
+import { StockTransferService } from '../core/StockTransferService';
 import { requireAuth } from '../../../shared/middleware/requireRole';
 
 const router = Router();
@@ -73,6 +75,79 @@ router.post('/stock/break-bulk', async (req, res, next) => {
     const service = new InventoryService(tenantId);
     const result = await service.breakBulk(req.body);
     res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Stock transfer endpoints
+router.get('/stock/transfers', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new StockTransferService(tenantId);
+    const page = parseInt((req.query.page as string) || '1', 10);
+    const pageSize = parseInt((req.query.pageSize as string) || '25', 10);
+
+    const result = await service.listTransfers({ page, pageSize });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/stock/transfers', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new StockTransferService(tenantId);
+    const { fromLocationId, toLocationId, items } = req.body as {
+      fromLocationId?: string;
+      toLocationId?: string;
+      items?: { productId: string; uomId: string; quantity: string | number }[];
+    };
+
+    if (!fromLocationId || !toLocationId) {
+      return res.status(400).json({
+        message: 'fromLocationId and toLocationId are required',
+      });
+    }
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({
+        message: 'items (non-empty array) are required',
+      });
+    }
+
+    const parsedItems = items.map((item) => ({
+      productId: item.productId,
+      uomId: item.uomId,
+      quantity: new Prisma.Decimal(item.quantity as any),
+    }));
+
+    const transfer = await service.createTransfer({
+      fromLocationId,
+      toLocationId,
+      createdByUserId: null,
+      items: parsedItems,
+    });
+
+    res.status(201).json(transfer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/stock/transfers/:id/post', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new StockTransferService(tenantId);
+
+    const userIdHeader = req.headers['x-user-id'];
+    const userId =
+      (Array.isArray(userIdHeader) ? userIdHeader[0] : userIdHeader)?.toString() ||
+      null;
+
+    const transfer = await service.postTransfer(req.params.id, userId);
+    res.json(transfer);
   } catch (err) {
     next(err);
   }

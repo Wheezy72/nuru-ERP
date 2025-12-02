@@ -888,4 +888,3 @@ export class DashboardService {
     return debtors.slice(0, 10);
   }
 }
-}

@@ -16,6 +16,9 @@ import mpesaRoutes from './modules/payments/http/mpesa.routes';
 import gatewayRoutes from './modules/payments/http/gateway.routes';
 import stockTakeRoutes from './modules/stocktake/http/stocktake.routes';
 import payrollRoutes from './modules/payroll/http/payroll.routes';
+import procurementRoutes from './modules/procurement/http/procurement.routes';
+import manufacturingRoutes from './modules/manufacturing/http/manufacturing.routes';
+import projectRoutes from './modules/projects/http/project.routes';
 
 const app = express();
 
@@ -25,10 +28,17 @@ const corsOrigin = process.env.FRONTEND_ORIGIN || '*';
 app.use(
   helmet({
     contentSecurityPolicy: false, // keep simple; frontend can define its own CSP
-  })
+  }),
 );
 
-));
+app.use(
+  cors({
+    origin: corsOrigin,
+  }),
+);
+
+app.use(express.json());
+app.use(morgan('dev'));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/inventory', inventoryRoutes);
@@ -43,15 +53,25 @@ app.use('/api/payments/mpesa', mpesaRoutes);
 app.use('/api/payments/gateway', gatewayRoutes);
 app.use('/api/stocktakes', stockTakeRoutes);
 app.use('/api/payroll', payrollRoutes);
+app.use('/api/procurement', procurementRoutes);
+app.use('/api/manufacturing', manufacturingRoutes);
+app.use('/api/projects', projectRoutes);
 
 app.use(
-  (err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  (
+    err: any,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    // eslint-disable-next-line no-console
     console.error(err);
     res.status(500).json({ message: err.message || 'Internal Server Error' });
-  }
+  },
 );
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
+  // eslint-disable-next-line no-console
   console.log(`Nuru API listening on port ${port}`);
 });
