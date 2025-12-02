@@ -5,6 +5,11 @@ import { apiClient } from '@/lib/apiClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  useTenantFeatures,
+  useUpdateTenantFeatures,
+  TenantFeatures,
+} from '@/hooks/useTenantFeatures';
 
 type FeatureBlock = {
   id: string;
@@ -41,6 +46,9 @@ export function SetupPage() {
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  const { data: features } = useTenantFeatures();
+  const updateFeatures = useUpdateTenantFeatures();
 
   const applyMutation = useMutation({
     mutationFn: async (payload: { baseType?: string | null; blocks: string[] }) => {
@@ -98,16 +106,45 @@ export function SetupPage() {
 
   const currentBase = baseTemplates.find((b) => b.id === selectedBase) || null;
 
+  const mode: 'SIMPLE' | 'FULL' =
+    (features && (features.mode as 'SIMPLE' | 'FULL')) || 'FULL';
+
+  const cashierVisibility =
+    (features &&
+      features.roleVisibility &&
+      (features.roleVisibility.CASHIER as any)) || {};
+
+  const cashierCanViewDailyTotals =
+    typeof cashierVisibility.canViewDailyTotals === 'boolean'
+      ? cashierVisibility.canViewDailyTotals
+      : false;
+
+  const handleModeChange = (nextMode: 'SIMPLE' | 'FULL') => {
+    const patch: Partial<TenantFeatures> = { mode: nextMode };
+    updateFeatures.mutate(patch);
+  };
+
+  const toggleCashierDailyTotals = () => {
+    const currentVisibility = (features?.roleVisibility as any) || {};
+    const nextVisibility = {
+      ...currentVisibility,
+      CASHIER: {
+        ...currentVisibility.CASHIER,
+        canViewDailyTotals: !cashierCanViewDailyTotals,
+      },
+    };
+    updateFeatures.mutate({ roleVisibility: nextVisibility });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-foreground">
-            Business Setup – Template Mixer
+            Business Setup
           </h1>
           <p className="text-xs text-muted-foreground">
-            Mix and match atomic feature blocks to match your real-world hybrid
-            business.
+            Configure your core modules, display mode, and permissions.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -137,6 +174,65 @@ export function SetupPage() {
         </div>
       </div>
 
+      {/* Display & Role Settings */}
+      <Card className="p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div>
+            <div className="text-[0.8rem] font-semibold text-foreground">
+              Display & Permissions
+            </div>
+            <div className="text-[0.7rem] text-muted-foreground">
+              Choose Simple vs Full mode and what your cashier can see.
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 text-xs">
+          <div className="space-y-2">
+            <div className="text-[0.75rem] font-semibold text-foreground">
+              Interface mode
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant={mode === 'SIMPLE' ? 'default' : 'outline'}
+                onClick={() => handleModeChange('SIMPLE')}
+              >
+                Simple (solo business)
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === 'FULL' ? 'default' : 'outline'}
+                onClick={() => handleModeChange('FULL')}
+              >
+                Full (team / accountant)
+              </Button>
+            </div>
+            <p className="text-[0.7rem] text-muted-foreground mt-1">
+              Simple mode hides advanced modules (Maker, Planner, Banking, Settings)
+              for non-admin roles.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <div className="text-[0.75rem] font-semibold text-foreground">
+              Cashier visibility
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-[0.7rem] text-muted-foreground">
+              <Checkbox
+                checked={cashierCanViewDailyTotals}
+                onCheckedChange={toggleCashierDailyTotals}
+              />
+              <span>
+                Allow cashiers to see today&apos;s total sales and cash on the dashboard
+              </span>
+            </label>
+            <p className="text-[0.7rem] text-muted-foreground mt-1">
+              Turn this off if you prefer cashiers to focus on their till only, while
+              managers/admins see overall performance.
+            </p>
+          </div>
+        </div>
+      </Card>
+
       {isLoading && (
         <div className="text-xs text-muted-foreground">Loading templates...</div>
       )}
@@ -145,7 +241,7 @@ export function SetupPage() {
         <Card className="p-4">
           <div className="mb-3 text-xs text-muted-foreground">
             Step 1 – Pick your primary business type. You can still add other
-            modules (gaming, movies, snacks) in the next step.
+            modules in the next step.
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {baseTemplates.map((base) => (

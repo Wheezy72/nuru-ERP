@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { TenantService } from '../core/TenantService';
-import { requireAuth } from '../../../shared/middleware/requireRole';
+import { requireAuth, requireRole } from '../../../shared/middleware/requireRole';
 import { TemplateEngine } from '../core/TemplateEngine';
 
 const router = Router();
@@ -25,6 +25,22 @@ router.get('/features', async (req, res, next) => {
     const tenantId = getTenantId(req);
     const service = new TenantService(tenantId);
     const features = await service.getFeatures();
+    res.json({ features });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Update tenant feature flags (mode, role visibility, etc.).
+ * Restricted to ADMIN.
+ */
+router.post('/features', requireRole(['ADMIN']), async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new TenantService(tenantId);
+    const patch = req.body as Record<string, unknown>;
+    const features = await service.updateFeatures(patch);
     res.json({ features });
   } catch (err) {
     next(err);

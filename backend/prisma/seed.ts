@@ -1,6 +1,7 @@
 import { PrismaClient, UserRole, TaxRate, EmployeeRole } from '@prisma/client';
 import { faker } from '@faker-js/faker';
 import bcrypt from 'bcryptjs';
+import { AccountingService } from '../src/modules/accounting/core/AccountingService';
 
 const prisma = new PrismaClient();
 
@@ -83,7 +84,42 @@ async function createTenants() {
     },
   });
 
-  return { nuru, wamama, safari, stMarys, greenLeaf };
+  const nairobiFurniture = await prisma.tenant.create({
+    data: {
+      name: 'Nairobi Furniture Works',
+      code: 'NAIROBI-FURNITURE',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+      features: {
+        type: 'MANUFACTURING',
+      },
+    },
+  });
+
+  const cityBuilders = await prisma.tenant.create({
+    data: {
+      name: 'City Builders Ltd',
+      code: 'CITY-BUILDERS',
+      isActive: true,
+      locale: 'en-KE',
+      currency: 'KES',
+      features: {
+        type: 'CONSTRUCTION',
+        enableProjects: true,
+      },
+    },
+  });
+
+  return {
+    nuru,
+    wamama,
+    safari,
+    stMarys,
+    greenLeaf,
+    nairobiFurniture,
+    cityBuilders,
+  };
 }
 
 async function createUsers(tenantId: string) {
@@ -302,22 +338,55 @@ async function randomTaxRate(): Promise<TaxRate> {
   return faker.helpers.arrayElement(rates);
 }
 
-async function seedInvoices(tenantId: string, locationId: string, products: any[], customers: any[]) {
+async function seedInvoices(
+  tenantId: string,
+  locationId: string,
+  products: any[],
+  customers: any[],
+  invoiceCount = 2500,
+) {
   const now = new Date();
   const start = new Date(now);
-  start.setMonth(now.getMonth() - 3);
+  start.setMonth(now.getMonth() - 12);
 
-  for (let i = 0; i < 500; i++) {
+  const ninetyDaysAgo = new Date(now);
+  ninetyDaysAgo.setDate(now.getDate() - 90);
+
+  // Force at least one clear dead-stock candidate for dashboard insights.
+  const deadStockProduct = products[0];
+
+  for (let i = 0; i < invoiceCount; i++) {
     const issueDate = faker.date.between({ from: start, to: now });
     const customer = faker.helpers.arrayElement(customers);
 
-    const lineCount = faker.number.int({ min: 1, max: 5 });
+    const dayOfWeek = issueDate.getDay(); // 0-6
+    const dayOfMonth = issueDate.getDate();
+
+    let minLines = 1;
+    let maxLines = 3;
+
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      maxLines += 2;
+    }
+    if (dayOfMonth >= 28) {
+      maxLines += 3;
+    }
+
+    const lineCount = faker.number.int({ min: minLines, max: maxLines });
     const items: any[] = [];
 
     let subtotal = 0;
 
     for (let j = 0; j < lineCount; j++) {
-      const product = faker.helpers.arrayElement(products);
+      let product = faker.helpers.arrayElement(products);
+
+      // Avoid selling the dead-stock product in the last 90 days
+      if (issueDate >= ninetyDaysAgo && product.id === deadStockProduct.id) {
+        product = faker.helpers.arrayElement(
+          products.filter((p) => p.id !== deadStockProduct.id),
+        );
+      }
+
       const quantity = faker.number.int({ min: 1, max: 10 });
       const unitPrice = faker.number.int({ min: 100, max: 3000 });
 
@@ -335,12 +404,28 @@ async function seedInvoices(tenantId: string, locationId: string, products: any[
       });
     }
 
+    const paymentRoll = Math.random();
+    let status: 'Paid' | 'Partial' | 'Posted';
+    let paidAmount = 0;
+
+    if (paymentRoll < 0.7) {
+      status = 'Paid';
+      paidAmount = subtotal;
+    } else if (paymentRoll < 0.85) {
+      status = 'Partial';
+      const fraction = faker.number.int({ min: 10, max: 80 }) / 100;
+      paidAmount = Math.round(subtotal * fraction);
+    } else {
+      status = 'Posted';
+      paidAmount = 0;
+    }
+
     const invoice = await prisma.invoice.create({
       data: {
         tenantId,
         customerId: customer.id,
         invoiceNo: `INV-${faker.string.numeric(6)}`,
-        status: faker.helpers.arrayElement(['Posted', 'Paid']),
+        status,
         issueDate,
         totalAmount: subtotal,
         items: {
@@ -363,14 +448,20 @@ async function seedInvoices(tenantId: string, locationId: string, products: any[
           },
         },
       });
+    }
 
+    if (paidAmount > 0) {
       await prisma.transaction.create({
         data: {
           tenantId,
           invoiceId: invoice.id,
-          amount: item.lineTotal,
+          amount: paidAmount,
           type: 'Credit',
-          reference: `Invoice ${invoice.invoiceNo}`,
+          reference:
+            status === 'Paid'
+              ? `Cash payment for ${invoice.invoiceNo}`
+              : `Partial payment for ${invoice.invoiceNo}`,
+          createdAt: issueDate,
         },
       });
     }
@@ -517,12 +608,14 @@ async function seedFleetTenant(tenantId: string) {
 
   const fleetCustomers = [mota, johnKamau];
 
-  // Generate about 20 hire invoices over the last 60 days
+  // Generate hire invoices over the last 12 months with mixed payment statuses
   const now = new Date();
   const start = new Date(now);
-  start.setDate(now.getDate() - 60);
+  start.setMonth(now.getMonth() - 12);
 
-  for (let i = 0; i < 20; i++) {
+  const invoiceCount = 400;
+
+  for (let i = 0; i < invoiceCount; i++) {
     const issueDate = faker.date.between({ from: start, to: now });
     const { product, dailyRate } = faker.helpers.arrayElement(products);
     const days = faker.number.int({ min: 1, max: 10 });
@@ -541,12 +634,28 @@ async function seedFleetTenant(tenantId: string) {
       taxRate: TaxRate.VAT_16,
     };
 
+    const paymentRoll = Math.random();
+    let status: 'Paid' | 'Partial' | 'Posted';
+    let paidAmount = 0;
+
+    if (paymentRoll < 0.7) {
+      status = 'Paid';
+      paidAmount = baseAmount;
+    } else if (paymentRoll < 0.85) {
+      status = 'Partial';
+      const fraction = faker.number.int({ min: 10, max: 80 }) / 100;
+      paidAmount = Math.round(baseAmount * fraction);
+    } else {
+      status = 'Posted';
+      paidAmount = 0;
+    }
+
     const invoice = await prisma.invoice.create({
       data: {
         tenantId,
         customerId: customer.id,
         invoiceNo: `FLEET-${faker.string.numeric(5)}`,
-        status: faker.helpers.arrayElement(['Posted', 'Paid']),
+        status,
         issueDate,
         totalAmount: baseAmount,
         items: {
@@ -555,20 +664,21 @@ async function seedFleetTenant(tenantId: string) {
       },
     });
 
-    // Cash flow via transactions (some mimicking M-Pesa remittances)
-    await prisma.transaction.create({
-      data: {
-        tenantId,
-        invoiceId: invoice.id,
-        amount: baseAmount,
-        type: 'Credit',
-        reference:
-          invoice.status === 'Paid'
-            ? `M-Pesa STK for ${invoice.invoiceNo}`
-            : `Invoice ${invoice.invoiceNo}`,
-        createdAt: issueDate,
-      },
-    });
+    if (paidAmount > 0) {
+      await prisma.transaction.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          amount: paidAmount,
+          type: 'Credit',
+          reference:
+            status === 'Paid'
+              ? `M-Pesa STK for ${invoice.invoiceNo}`
+              : `Partial hire payment for ${invoice.invoiceNo}`,
+          createdAt: issueDate,
+        },
+      });
+    }
   }
 
   // Link this fleet tenant to a Chama constitution as group-owned
@@ -644,10 +754,13 @@ async function seedSchoolTenant(tenantId: string) {
 
   // Students as customers
   const classes = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4'];
-  for (let i = 0; i < 40; i++) {
+  const students: any[] = [];
+  const studentCount = 350;
+
+  for (let i = 0; i < studentCount; i++) {
     const name = randomKenyanName();
     const klass = faker.helpers.arrayElement(classes);
-    await prisma.customer.create({
+    const student = await prisma.customer.create({
       data: {
         tenantId,
         name: `${name} (${klass})`,
@@ -656,6 +769,88 @@ async function seedSchoolTenant(tenantId: string) {
         kraPin: null,
       },
     });
+    students.push(student);
+  }
+
+  // Generate term fee invoices for the last academic year
+  const now = new Date();
+  const year = now.getFullYear();
+  const termDates = [
+    new Date(year, 0, 10),
+    new Date(year, 4, 10),
+    new Date(year, 8, 10),
+  ];
+  const termFees = [15000, 16000, 16000];
+
+  for (const student of students) {
+    for (let t = 0; t < feeProducts.length; t++) {
+      const baseDate = termDates[t];
+      const issueDate = new Date(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        baseDate.getDate() + faker.number.int({ min: 0, max: 14 }),
+      );
+
+      const product = feeProducts[t];
+      const amount = termFees[t];
+
+      const paymentRoll = Math.random();
+      let status: 'Paid' | 'Partial' | 'Posted';
+      let paidAmount = 0;
+
+      if (paymentRoll < 0.7) {
+        status = 'Paid';
+        paidAmount = amount;
+      } else if (paymentRoll < 0.85) {
+        status = 'Partial';
+        const fraction = faker.number.int({ min: 10, max: 80 }) / 100;
+        paidAmount = Math.round(amount * fraction);
+      } else {
+        status = 'Posted';
+        paidAmount = 0;
+      }
+
+      const invoice = await prisma.invoice.create({
+        data: {
+          tenantId,
+          customerId: student.id,
+          invoiceNo: `SCH-${faker.string.numeric(6)}`,
+          status,
+          issueDate,
+          totalAmount: amount,
+          items: {
+            create: [
+              {
+                tenantId,
+                productId: product.id,
+                quantity: 1,
+                unitPrice: amount,
+                uomId: term.id,
+                lineTotal: amount,
+                hsCode: '999999',
+                taxRate: TaxRate.EXEMPT,
+              },
+            ],
+          },
+        },
+      });
+
+      if (paidAmount > 0) {
+        await prisma.transaction.create({
+          data: {
+            tenantId,
+            invoiceId: invoice.id,
+            amount: paidAmount,
+            type: 'Credit',
+            reference:
+              status === 'Paid'
+                ? `Fee payment for ${invoice.invoiceNo}`
+                : `Partial fee payment for ${invoice.invoiceNo}`,
+            createdAt: issueDate,
+          },
+        });
+      }
+    }
   }
 }
 
@@ -894,56 +1089,727 @@ async function seedAgrovetTenant(tenantId: string) {
     },
   });
 
-  // A few agrovet customers
-  await prisma.customer.createMany({
+  // Agrovet customers
+  const customers: any[] = [];
+
+  const kipkorir = await prisma.customer.create({
+    data: {
+      tenantId,
+      name: 'Kipkorir Dairy Farm',
+      phone: randomKenyanPhone(),
+      email: 'accounts@kipkorir-dairy.co.ke',
+      kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+    },
+  });
+
+  const mamaMumbi = await prisma.customer.create({
+    data: {
+      tenantId,
+      name: 'Mama Mumbi Agrodealer',
+      phone: randomKenyanPhone(),
+      email: 'mumbi.agro@example.com',
+      kraPin: `A${faker.string.alphanumeric(9).toUpperCase()}`,
+    },
+  });
+
+  customers.push(kipkorir, mamaMumbi);
+
+  // Generate agrovet sales invoices over the last 12 months
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(now.getMonth() - 12);
+
+  const productsForSale = [tickGrease, dapFertilizer, cowSalt];
+  const priceByProductId: Record<string, number> = {
+    [tickGrease.id]: 250,
+    [dapFertilizer.id]: 80,
+    [cowSalt.id]: 60,
+  };
+
+  const invoiceCount = 400;
+
+  for (let i = 0; i < invoiceCount; i++) {
+    const issueDate = faker.date.between({ from: start, to: now });
+    const customer = faker.helpers.arrayElement(customers);
+
+    const dayOfWeek = issueDate.getDay();
+    const dayOfMonth = issueDate.getDate();
+
+    let minLines = 1;
+    let maxLines = 2;
+
+    if (dayOfWeek === 6 || dayOfWeek === 0) {
+      maxLines += 1;
+    }
+    if (dayOfMonth >= 28) {
+      maxLines += 1;
+    }
+
+    const lineCount = faker.number.int({ min: minLines, max: maxLines });
+    const items: any[] = [];
+
+    let subtotal = 0;
+
+    for (let j = 0; j < lineCount; j++) {
+      const product = faker.helpers.arrayElement(productsForSale);
+      const baseQtyMin = product.id === dapFertilizer.id ? 10 : 1;
+      const baseQtyMax = product.id === dapFertilizer.id ? 50 : 10;
+      const quantity = faker.number.int({ min: baseQtyMin, max: baseQtyMax });
+      const unitPrice = priceByProductId[product.id];
+
+      subtotal += quantity * unitPrice;
+
+      items.push({
+        tenantId,
+        productId: product.id,
+        quantity,
+        unitPrice,
+        uomId: product.defaultUomId,
+        lineTotal: quantity * unitPrice,
+        hsCode: faker.string.numeric(6),
+        taxRate: TaxRate.VAT_16,
+      });
+    }
+
+    const paymentRoll = Math.random();
+    let status: 'Paid' | 'Partial' | 'Posted';
+    let paidAmount = 0;
+
+    if (paymentRoll < 0.7) {
+      status = 'Paid';
+      paidAmount = subtotal;
+    } else if (paymentRoll < 0.85) {
+      status = 'Partial';
+      const fraction = faker.number.int({ min: 10, max: 80 }) / 100;
+      paidAmount = Math.round(subtotal * fraction);
+    } else {
+      status = 'Posted';
+      paidAmount = 0;
+    }
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        tenantId,
+        customerId: customer.id,
+        invoiceNo: `AG-${faker.string.numeric(6)}`,
+        status,
+        issueDate,
+        totalAmount: subtotal,
+        items: {
+          create: items,
+        },
+      },
+    });
+
+    if (paidAmount > 0) {
+      await prisma.transaction.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          amount: paidAmount,
+          type: 'Credit',
+          reference:
+            status === 'Paid'
+              ? `Agrovet cash sale ${invoice.invoiceNo}`
+              : `Agrovet partial payment ${invoice.invoiceNo}`,
+          createdAt: issueDate,
+        },
+      });
+    }
+  }
+}
+
+async function seedManufacturingTenant(tenantId: string) {
+  // Manufacturing units
+  const piece = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Piece',
+      category: 'Unit',
+      ratio: 1,
+    },
+  });
+  const set = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Set',
+      category: 'Unit',
+      ratio: 1,
+    },
+  });
+
+  const location = await prisma.location.create({
+    data: {
+      tenantId,
+      name: 'Workshop & Showroom',
+      code: 'WORKSHOP',
+      isActive: true,
+    },
+  });
+
+  // Components and finished goods
+  const leg = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Mahogany Table Leg',
+      sku: 'LEG-MAHOGANY',
+      defaultUomId: piece.id,
+      category: 'Component',
+      minStockQuantity: 50,
+    },
+  });
+
+  const top = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Mahogany Table Top',
+      sku: 'TOP-MAHOGANY',
+      defaultUomId: piece.id,
+      category: 'Component',
+      minStockQuantity: 20,
+    },
+  });
+
+  const table = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Mahogany Dining Table (4-Seater)',
+      sku: 'TABLE-MAHOGANY-4S',
+      defaultUomId: set.id,
+      category: 'FinishedGood',
+      minStockQuantity: 10,
+    },
+  });
+
+  // Seed generous stock so manufacturing and sales never hit negative in the demo
+  await prisma.stockQuant.createMany({
     data: [
       {
         tenantId,
-        name: 'Kipkorir Dairy Farm',
-        phone: randomKenyanPhone(),
-        email: 'accounts@kipkorir-dairy.co.ke',
-        kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+        productId: leg.id,
+        locationId: location.id,
+        batchId: null,
+        uomId: piece.id,
+        quantity: 2000,
       },
       {
         tenantId,
-        name: 'Mama Mumbi Agrodealer',
-        phone: randomKenyanPhone(),
-        email: 'mumbi.agro@example.com',
-        kraPin: `A${faker.string.alphanumeric(9).toUpperCase()}`,
+        productId: top.id,
+        locationId: location.id,
+        batchId: null,
+        uomId: piece.id,
+        quantity: 500,
+      },
+      {
+        tenantId,
+        productId: table.id,
+        locationId: location.id,
+        batchId: null,
+        uomId: set.id,
+        quantity: 300,
       },
     ],
   });
+
+  // Supplier and purchase orders for raw materials
+  const supplier = await prisma.supplier.create({
+    data: {
+      tenantId,
+      name: 'Timber & Boards Suppliers Ltd',
+      phone: randomKenyanPhone(),
+      email: 'orders@timber-boards.co.ke',
+      kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+    },
+  });
+
+  const accounting = new AccountingService(tenantId);
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(now.getMonth() - 12);
+
+  const poCount = 24;
+
+  for (let i = 0; i < poCount; i++) {
+    const orderDate = faker.date.between({ from: start, to: now });
+    const legQty = faker.number.int({ min: 50, max: 150 });
+    const topQty = faker.number.int({ min: 20, max: 60 });
+    const legCost = 300;
+    const topCost = 1200;
+
+    const items = [
+      {
+        tenantId,
+        productId: leg.id,
+        quantity: legQty,
+        unitCost: legCost,
+        uomId: piece.id,
+        lineTotal: legQty * legCost,
+      },
+      {
+        tenantId,
+        productId: top.id,
+        quantity: topQty,
+        unitCost: topCost,
+        uomId: piece.id,
+        lineTotal: topQty * topCost,
+      },
+    ];
+
+    const totalAmount = items.reduce((acc, it) => acc + it.lineTotal, 0);
+
+    const po = await prisma.purchaseOrder.create({
+      data: {
+        tenantId,
+        supplierId: supplier.id,
+        status: 'RECEIVED',
+        orderDate,
+        expectedDate: orderDate,
+        totalAmount,
+        items: {
+          create: items,
+        },
+      },
+    });
+
+    // Record GL entries for procurement
+    await accounting.recordPurchaseOrderReceipt(po.id);
+  }
+
+  // Basic BOM: 4 legs + 1 top -> 1 table
+  const bom = await prisma.billOfMaterial.create({
+    data: {
+      tenantId,
+      productId: table.id,
+      name: 'Dining Table – Standard BOM',
+      isActive: true,
+      items: {
+        create: [
+          {
+            tenantId,
+            componentProductId: leg.id,
+            uomId: piece.id,
+            quantity: 4,
+          },
+          {
+            tenantId,
+            componentProductId: top.id,
+            uomId: piece.id,
+            quantity: 1,
+          },
+        ],
+      },
+    },
+  });
+
+  // Production orders over the last year
+  const productionOrderCount = 80;
+
+  for (let i = 0; i < productionOrderCount; i++) {
+    const startedAt = faker.date.between({ from: start, to: now });
+    const completedAt = new Date(
+      startedAt.getTime() + faker.number.int({ min: 1, max: 5 }) * 24 * 60 * 60 * 1000,
+    );
+    const quantity = faker.number.int({ min: 1, max: 3 });
+
+    await prisma.productionOrder.create({
+      data: {
+        tenantId,
+        bomId: bom.id,
+        productId: table.id,
+        locationId: location.id,
+        quantity,
+        status: 'COMPLETED',
+        startedAt,
+        completedAt,
+      },
+    });
+  }
+
+  // Customers and finished goods sales
+  const customers = await seedCustomers(tenantId);
+  await seedInvoices(tenantId, location.id, [table], customers, 400);
+}
+
+async function seedConstructionTenant(tenantId: string) {
+  // Construction units
+  const bag = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Bag',
+      category: 'Unit',
+      ratio: 1,
+    },
+  });
+  const ton = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Ton',
+      category: 'Weight',
+      ratio: 1,
+    },
+  });
+  const day = await prisma.unitOfMeasure.create({
+    data: {
+      tenantId,
+      name: 'Day',
+      category: 'Time',
+      ratio: 1,
+    },
+  });
+
+  const yard = await prisma.location.create({
+    data: {
+      tenantId,
+      name: 'Construction Yard & Stores',
+      code: 'YARD',
+      isActive: true,
+    },
+  });
+
+  // Materials and labour products
+  const cement = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'OPC Cement 50kg Bag',
+      sku: 'CEM-50KG',
+      defaultUomId: bag.id,
+      category: 'Material',
+      minStockQuantity: 200,
+    },
+  });
+
+  const steel = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Deformed Steel Bars (Ton)',
+      sku: 'STEEL-TON',
+      defaultUomId: ton.id,
+      category: 'Material',
+      minStockQuantity: 20,
+    },
+  });
+
+  const sand = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Sand – Tipper Load (Ton)',
+      sku: 'SAND-TON',
+      defaultUomId: ton.id,
+      category: 'Material',
+      minStockQuantity: 30,
+    },
+  });
+
+  const labour = await prisma.product.create({
+    data: {
+      tenantId,
+      name: 'Construction Labour Day',
+      sku: 'LABOUR-DAY',
+      defaultUomId: day.id,
+      category: 'Service',
+      minStockQuantity: 0,
+    },
+  });
+
+  await prisma.stockQuant.createMany({
+    data: [
+      {
+        tenantId,
+        productId: cement.id,
+        locationId: yard.id,
+        batchId: null,
+        uomId: bag.id,
+        quantity: 5000,
+      },
+      {
+        tenantId,
+        productId: steel.id,
+        locationId: yard.id,
+        batchId: null,
+        uomId: ton.id,
+        quantity: 200,
+      },
+      {
+        tenantId,
+        productId: sand.id,
+        locationId: yard.id,
+        batchId: null,
+        uomId: ton.id,
+        quantity: 300,
+      },
+    ],
+  });
+
+  // Projects
+  const projectA = await prisma.project.create({
+    data: {
+      tenantId,
+      name: 'Riverfront Apartments Phase 1',
+      code: 'RIV-APT-P1',
+      status: 'OPEN',
+      startDate: new Date(new Date().getFullYear(), 0, 15),
+      endDate: null,
+    },
+  });
+
+  const projectB = await prisma.project.create({
+    data: {
+      tenantId,
+      name: 'Eastern Bypass Warehouses',
+      code: 'EB-WAREHOUSES',
+      status: 'OPEN',
+      startDate: new Date(new Date().getFullYear(), 1, 10),
+      endDate: null,
+    },
+  });
+
+  // Suppliers
+  const suppliers = [
+    await prisma.supplier.create({
+      data: {
+        tenantId,
+        name: 'KenCem Cement Distributors',
+        phone: randomKenyanPhone(),
+        email: 'sales@kencem.co.ke',
+        kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+    }),
+    await prisma.supplier.create({
+      data: {
+        tenantId,
+        name: 'Nairobi Steel & Hardware',
+        phone: randomKenyanPhone(),
+        email: 'orders@nsteelhardware.co.ke',
+        kraPin: `A${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+    }),
+  ];
+
+  const accounting = new AccountingService(tenantId);
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(now.getMonth() - 12);
+
+  // Project-coded purchase orders (job costs)
+  const poCount = 40;
+  const materialProducts = [cement, steel, sand];
+
+  for (let i = 0; i < poCount; i++) {
+    const orderDate = faker.date.between({ from: start, to: now });
+    const project = i % 2 === 0 ? projectA : projectB;
+    const supplier = faker.helpers.arrayElement(suppliers);
+
+    const lineCount = faker.number.int({ min: 1, max: 3 });
+    const items: any[] = [];
+    let totalAmount = 0;
+
+    for (let j = 0; j < lineCount; j++) {
+      const product = faker.helpers.arrayElement(materialProducts);
+      const quantity =
+        product.id === cement.id
+          ? faker.number.int({ min: 100, max: 600 })
+          : faker.number.int({ min: 5, max: 40 });
+      const unitCost =
+        product.id === cement.id
+          ? 750
+          : product.id === steel.id
+          ? 120000
+          : 3500;
+      const lineTotal = quantity * unitCost;
+      totalAmount += lineTotal;
+
+      items.push({
+        tenantId,
+        productId: product.id,
+        quantity,
+        unitCost,
+        uomId: product.defaultUomId,
+        lineTotal,
+      });
+    }
+
+    const po = await prisma.purchaseOrder.create({
+      data: {
+        tenantId,
+        supplierId: supplier.id,
+        projectId: project.id,
+        status: 'RECEIVED',
+        orderDate,
+        expectedDate: orderDate,
+        totalAmount,
+        items: {
+          create: items,
+        },
+      },
+    });
+
+    await accounting.recordPurchaseOrderReceipt(po.id);
+  }
+
+  // Customers (developers / government)
+  const customers: any[] = [];
+  customers.push(
+    await prisma.customer.create({
+      data: {
+        tenantId,
+        name: 'Karibu Homes Developers',
+        phone: randomKenyanPhone(),
+        email: 'accounts@karibu-homes.co.ke',
+        kraPin: `P${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+    }),
+  );
+  customers.push(
+    await prisma.customer.create({
+      data: {
+        tenantId,
+        name: 'County Govt of Kajiado',
+        phone: randomKenyanPhone(),
+        email: 'finance@kajiado.go.ke',
+        kraPin: `G${faker.string.alphanumeric(9).toUpperCase()}`,
+      },
+    }),
+  );
+
+  // Project-coded invoices (revenue side)
+  const invoiceCountPerProject = 200;
+
+  for (const project of [projectA, projectB]) {
+    for (let i = 0; i < invoiceCountPerProject; i++) {
+      const issueDate = faker.date.between({ from: start, to: now });
+      const customer = faker.helpers.arrayElement(customers);
+
+      const days = faker.number.int({ min: 5, max: 30 });
+      const dayRate = faker.number.int({ min: 5000, max: 15000 });
+      const baseAmount = days * dayRate;
+
+      const paymentRoll = Math.random();
+      let status: 'Paid' | 'Partial' | 'Posted';
+      let paidAmount = 0;
+
+      if (paymentRoll < 0.7) {
+        status = 'Paid';
+        paidAmount = baseAmount;
+      } else if (paymentRoll < 0.85) {
+        status = 'Partial';
+        const fraction = faker.number.int({ min: 10, max: 80 }) / 100;
+        paidAmount = Math.round(baseAmount * fraction);
+      } else {
+        status = 'Posted';
+        paidAmount = 0;
+      }
+
+      const invoice = await prisma.invoice.create({
+        data: {
+          tenantId,
+          customerId: customer.id,
+          projectId: project.id,
+          invoiceNo: `PRJ-${project.code}-${faker.string.numeric(4)}`,
+          status,
+          issueDate,
+          totalAmount: baseAmount,
+          items: {
+            create: [
+              {
+                tenantId,
+                productId: labour.id,
+                quantity: days,
+                unitPrice: dayRate,
+                uomId: day.id,
+                lineTotal: baseAmount,
+                hsCode: '998721',
+                taxRate: TaxRate.VAT_16,
+              },
+            ],
+          },
+        },
+      });
+
+      if (paidAmount > 0) {
+        await prisma.transaction.create({
+          data: {
+            tenantId,
+            invoiceId: invoice.id,
+            amount: paidAmount,
+            type: 'Credit',
+            reference:
+              status === 'Paid'
+                ? `Project payment for ${invoice.invoiceNo}`
+                : `Partial project payment for ${invoice.invoiceNo}`,
+            createdAt: issueDate,
+          },
+        });
+      }
+    }
+  }
 }
 
 async function main() {
   console.log('Seeding database with realistic Kenyan data...');
 
+  // Wipe data in dependency order
   await prisma.systemLog.deleteMany({});
   await prisma.passwordResetToken.deleteMany({});
   await prisma.transaction.deleteMany({});
   await prisma.invoiceItem.deleteMany({});
   await prisma.invoice.deleteMany({});
+  await prisma.purchaseOrderItem.deleteMany({});
+  await prisma.purchaseOrder.deleteMany({});
+  await prisma.glJournalLine.deleteMany({});
+  await prisma.glJournalEntry.deleteMany({});
+  await prisma.glAccount.deleteMany({});
+  await prisma.stockTransferItem.deleteMany({});
+  await prisma.stockTransfer.deleteMany({});
+  await prisma.stockTakeItem.deleteMany({});
+  await prisma.stockTake.deleteMany({});
+  await prisma.billOfMaterialItem.deleteMany({});
+  await prisma.productionOrder.deleteMany({});
+  await prisma.billOfMaterial.deleteMany({});
+  await prisma.productBatch.deleteMany({});
   await prisma.stockQuant.deleteMany({});
-  await prisma.product.deleteMany({});
-  await prisma.location.deleteMany({});
   await prisma.account.deleteMany({});
   await prisma.loanGuarantor.deleteMany({});
   await prisma.loan.deleteMany({});
+  await prisma.session.deleteMany({});
   await prisma.member.deleteMany({});
   await prisma.chamaConstitution.deleteMany({});
   await prisma.customer.deleteMany({});
+  await prisma.supplier.deleteMany({});
+  await prisma.project.deleteMany({});
   await prisma.employee.deleteMany({});
+  await prisma.unitOfMeasure.deleteMany({});
+  await prisma.product.deleteMany({});
+  await prisma.location.deleteMany({});
   await prisma.user.deleteMany({});
   await prisma.tenant.deleteMany({});
 
-  const { nuru, wamama, safari, stMarys, greenLeaf } = await createTenants();
+  const {
+    nuru,
+    wamama,
+    safari,
+    stMarys,
+    greenLeaf,
+    nairobiFurniture,
+    cityBuilders,
+  } = await createTenants();
 
   await createUsers(nuru.id);
   await createUsers(wamama.id);
   await createUsers(safari.id);
   await createUsers(stMarys.id);
   await createUsers(greenLeaf.id);
+  await createUsers(nairobiFurniture.id);
+  await createUsers(cityBuilders.id);
   await createDefaultAdmin(nuru.id);
+
+  // Ensure a basic chart of accounts for all tenants
+  await new AccountingService(nuru.id).ensureDefaultAccounts();
+  await new AccountingService(wamama.id).ensureDefaultAccounts();
+  await new AccountingService(safari.id).ensureDefaultAccounts();
+  await new AccountingService(stMarys.id).ensureDefaultAccounts();
+  await new AccountingService(greenLeaf.id).ensureDefaultAccounts();
+  await new AccountingService(nairobiFurniture.id).ensureDefaultAccounts();
+  await new AccountingService(cityBuilders.id).ensureDefaultAccounts();
 
   const { products, location } = await seedInventory(nuru.id);
   const customers = await seedCustomers(nuru.id);
@@ -956,6 +1822,16 @@ async function main() {
   await seedSchoolTenant(stMarys.id);
   // Agrovet tenant seed
   await seedAgrovetTenant(greenLeaf.id);
+  // Manufacturing tenant seed (furniture / BOM / production)
+  await seedManufacturingTenant(nairobiFurniture.id);
+  // Construction tenant seed (projects / job costing)
+  await seedConstructionTenant(cityBuilders.id);
+
+  // Normalise any negative stock that might have occurred due to randomised seeding
+  await prisma.stockQuant.updateMany({
+    where: { quantity: { lt: 0 } },
+    data: { quantity: 0 },
+  });
 
   console.log('Seeding complete.');
 }

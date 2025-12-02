@@ -1,11 +1,20 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import rateLimit from 'express-rate-limit';
 import { AuthService } from '../core/AuthService';
 import bcrypt from 'bcryptjs';
 import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Limit brute-force attempts on login: 100 requests / 15 minutes per IP.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 router.post('/lookup-tenants', async (req, res, next) => {
   try {
@@ -45,7 +54,7 @@ router.post('/lookup-tenants', async (req, res, next) => {
   }
 });
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password, tenantId } = req.body as {
       email?: string;

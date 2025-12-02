@@ -13,3 +13,19 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
     'Segoe UI', sans-serif;
 }
+
+/* Outdoor theme tweaks for high-contrast environments */
+:root[data-theme='default'] {
+  --nuru-bg: theme('colors.background');
+  --nuru-fg: theme('colors.foreground');
+}
+
+:root[data-theme='outdoor'] {
+  --nuru-bg: #fdfdf5;
+  --nuru-fg: #0b1120;
+}
+
+body {
+  background-color: var(--nuru-bg);
+  color: var(--nuru-fg);
+}

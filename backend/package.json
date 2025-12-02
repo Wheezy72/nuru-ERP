@@ -11,15 +11,25 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "seed": "ts-node prisma/seed.ts",
-    "health-check": "ts-node scripts/health-check.ts"
+    "health-check": "ts-node scripts/health-check.ts",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"prisma/**/*.ts\" --max-warnings=0",
+    "format": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "precommit": "npm run lint && npm test && npm run typecheck"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
     "@faker-js/faker": "^8.4.1",
+    "@sentry/node": "^10.27.0",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^7.4.0",
+    "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0"
   },
@@ -30,9 +40,17 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/morgan": "^1.9.9",
     "@types/node": "^20.16.10",
+    "@vitest/coverage-c8": "^2.1.4",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-simple-import-sort": "^12.1.0",
+    "eslint-plugin-unused-imports": "^4.1.3",
     "prisma": "^5.20.0",
+    "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.4"
   }
 }

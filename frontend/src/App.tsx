@@ -15,6 +15,10 @@ import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
 import { TaxDetailsPage } from '@/pages/reporting/TaxDetailsPage';
 import { PayCasualsPage } from '@/pages/hr/PayCasualsPage';
 import { SetupPage } from '@/pages/settings/SetupPage';
+import { PurchaseOrdersPage } from '@/pages/procurement/PurchaseOrdersPage';
+import { ManufacturingPage } from '@/pages/manufacturing/ManufacturingPage';
+import { ProjectsPage } from '@/pages/projects/ProjectsPage';
+import { AssetsPage } from '@/pages/accounting/AssetsPage';
 
 export function App() {
   return (
@@ -30,6 +34,10 @@ export function App() {
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/procurement/purchase-orders" element={<PurchaseOrdersPage />} />
+          <Route path="/manufacturing" element={<ManufacturingPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/accounting/assets" element={<AssetsPage />} />
           <Route path="/payroll/casuals" element={<PayCasualsPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />

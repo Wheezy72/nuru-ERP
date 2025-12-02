@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../prisma/client';
+import { LoyaltyService } from '../../modules/customers/core/LoyaltyService';
 
 type StkPushParams = {
   amount: number;
@@ -219,6 +220,23 @@ export class MpesaService {
         },
       },
     });
+
+    if (newStatus === 'Paid') {
+      const loyalty = new LoyaltyService(this.tenantId);
+      await loyalty.awardForInvoice(invoice.id);
+
+      // Also record a GL cash receipt (DR Cash / CR Receivables)
+      try {
+        const { AccountingService } = await import(
+          '../../modules/accounting/core/AccountingService'
+        );
+        const accounting = new AccountingService(this.tenantId);
+        await accounting.recordInvoicePaid(invoice.id);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to record GL cash receipt for M-Pesa payment', err);
+      }
+    }
 
     return updated;
   }

@@ -1,5 +1,6 @@
 import { Prisma, TaxRate } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
+import { getRedisClient } from '../../../shared/cache/redisClient';
 
 type DateRange = {
   startDate?: Date;
@@ -27,8 +28,26 @@ export class DashboardService {
     return new Date(date.getTime() - offsetMs);
   }
 
+  /**
+   * Get dashboard summary for a tenant.
+   * Uses Redis (if configured) to cache the payload for 5 minutes.
+   */
   async getSummary(range: DateRange) {
     const prisma = this.prisma;
+    const redis = getRedisClient();
+
+    const cacheKey = this.buildCacheKey(range);
+
+    if (redis) {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          // fall through to recompute
+        }
+      }
+    }
 
     const [
       metrics,
@@ -48,7 +67,7 @@ export class DashboardService {
       this.getDebtors(prisma),
     ]);
 
-    return {
+    const summary = {
       metrics,
       cashFlow,
       chamaTrust,
@@ -57,11 +76,25 @@ export class DashboardService {
       taxLiability,
       debtors,
     };
+
+    if (redis) {
+      await redis.setex(cacheKey, 60 * 5, JSON.stringify(summary));
+    }
+
+    return summary;
+  }
+
+  private buildCacheKey(range: DateRange): string {
+    const base = `dashboard:summary:${this.tenantId}`;
+    if (range.startDate && range.endDate) {
+      return `${base}:${range.startDate.toISOString()}:${range.endDate.toISOString()}`;
+    }
+    return `${base}:default`;
   }
 
   private async getMetrics(
     prisma: ReturnType<typeof this['prisma']>,
-    range: DateRange
+    range: DateRange,
   ) {
     let start: Date;
     let end: Date;
@@ -81,8 +114,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
       const eatEnd = new Date(
         Date.UTC(
@@ -92,8 +125,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
 
       start = this.fromEAT(eatStart);
@@ -117,10 +150,10 @@ export class DashboardService {
       _sum: { balance: true },
     });
 
-    const totalSalesTodayDecimal = invoicesAgg._sum.totalAmount ?? new Prisma.Decimal(
-      0
-    );
-    const cashAtHandDecimal = accountsAgg._sum.balance ?? new Prisma.Decimal(0);
+    const totalSalesTodayDecimal =
+      invoicesAgg._sum.totalAmount ?? new Prisma.Decimal(0);
+    const cashAtHandDecimal =
+      accountsAgg._sum.balance ?? new Prisma.Decimal(0);
 
     return {
       totalSalesToday: Number(totalSalesTodayDecimal.toString()),
@@ -130,7 +163,7 @@ export class DashboardService {
 
   private async getCashFlow(
     prisma: ReturnType<typeof this['prisma']>,
-    range: DateRange
+    range: DateRange,
   ) {
     let start: Date;
     let end: Date;
@@ -150,8 +183,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
       const eatStart = new Date(
         Date.UTC(
@@ -161,8 +194,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
 
       start = this.fromEAT(eatStart);
@@ -180,7 +213,11 @@ export class DashboardService {
     });
 
     const buckets: {
-      [key: string]: { label: string; income: Prisma.Decimal; expenses: Prisma.Decimal };
+      [key: string]: {
+        label: string;
+        income: Prisma.Decimal;
+        expenses: Prisma.Decimal;
+      };
     } = {};
 
     for (const tx of transactions) {
@@ -201,11 +238,11 @@ export class DashboardService {
 
       if (tx.type === 'Credit') {
         buckets[key].income = buckets[key].income.add(
-          tx.amount as unknown as Prisma.Decimal
+          tx.amount as unknown as Prisma.Decimal,
         );
       } else if (tx.type === 'Debit') {
         buckets[key].expenses = buckets[key].expenses.add(
-          tx.amount as unknown as Prisma.Decimal
+          tx.amount as unknown as Prisma.Decimal,
         );
       }
     }
@@ -214,8 +251,8 @@ export class DashboardService {
       1,
       Math.min(
         31,
-        Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-      )
+        Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)),
+      ),
     );
 
     const days: string[] = [];
@@ -233,8 +270,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
       const y = d.getUTCFullYear();
       const m = d.getUTCMonth();
@@ -243,12 +280,8 @@ export class DashboardService {
       const bucket = buckets[key];
 
       days.push(`${m + 1}/${day}`);
-      income.push(
-        bucket ? Number(bucket.income.toString()) : 0
-      );
-      expenses.push(
-        bucket ? Number(bucket.expenses.toString()) : 0
-      );
+      income.push(bucket ? Number(bucket.income.toString()) : 0);
+      expenses.push(bucket ? Number(bucket.expenses.toString()) : 0);
     }
 
     return { days, income, expenses };
@@ -268,8 +301,10 @@ export class DashboardService {
       _sum: { principal: true },
     });
 
-    const potSizeDecimal = accountsAgg._sum.balance ?? new Prisma.Decimal(0);
-    const loansIssuedDecimal = loansAgg._sum.principal ?? new Prisma.Decimal(0);
+    const potSizeDecimal =
+      accountsAgg._sum.balance ?? new Prisma.Decimal(0);
+    const loansIssuedDecimal =
+      loansAgg._sum.principal ?? new Prisma.Decimal(0);
 
     return {
       potSize: Number(potSizeDecimal.toString()),
@@ -312,7 +347,8 @@ export class DashboardService {
         _sum: { quantity: true },
       });
 
-      const totalQtyDecimal = agg._sum.quantity ?? new Prisma.Decimal(0);
+      const totalQtyDecimal =
+        agg._sum.quantity ?? new Prisma.Decimal(0);
       const minQtyDecimal =
         (product.minStockQuantity as unknown as Prisma.Decimal) ||
         new Prisma.Decimal(0);
@@ -332,11 +368,11 @@ export class DashboardService {
 
   /**
    * Compute VAT/tax liability for the selected period.
-   * This is the backbone for an eTIMS-style \"Regulator View\".
+   * This is the backbone for an eTIMS-style "Regulator View".
    */
   private async getTaxLiability(
     prisma: ReturnType<typeof this['prisma']>,
-    range: DateRange
+    range: DateRange,
   ) {
     let start: Date;
     let end: Date;
@@ -356,8 +392,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
       const eatEnd = new Date(
         Date.UTC(
@@ -367,8 +403,8 @@ export class DashboardService {
           0,
           0,
           0,
-          0
-        )
+          0,
+        ),
       );
 
       start = this.fromEAT(eatStart);
@@ -391,8 +427,7 @@ export class DashboardService {
         lineTotal: true,
         taxRate: true,
       },
-   _code }new)</;
-
+    });
 
     const breakdown = {
       vat16: {
@@ -440,7 +475,8 @@ export class DashboardService {
       } else if (rate === 'EXEMPT') {
         breakdown.exempt.amount = breakdown.exempt.amount.add(amount);
       } else if (rate === 'ZERO') {
-        breakdown.zeroRated.amount = breakdown.zeroRated.amount.add(amount);
+        breakdown.zeroRated.amount =
+          breakdown.zeroRated.amount.add(amount);
       }
 
       breakdown.totalTax = breakdown.totalTax.add(tax);
@@ -471,7 +507,9 @@ export class DashboardService {
    * - Stockout prediction: items likely to run out soon based on average daily sales.
    * - Dead stock: items with high stock and no sales in 60 days.
    */
-  private async getSmartInsights(prisma: ReturnType<typeof this['prisma']>) {
+  private async getSmartInsights(
+    prisma: ReturnType<typeof this['prisma']>,
+  ) {
     const now = new Date();
     const thirtyDaysAgo = new Date(
       now.getFullYear(),
@@ -480,7 +518,7 @@ export class DashboardService {
       0,
       0,
       0,
-      0
+      0,
     );
     const sixtyDaysAgo = new Date(
       now.getFullYear(),
@@ -489,7 +527,7 @@ export class DashboardService {
       0,
       0,
       0,
-      0
+      0,
     );
     const ninetyDaysAgo = new Date(
       now.getFullYear(),
@@ -498,7 +536,7 @@ export class DashboardService {
       0,
       0,
       0,
-      0
+      0,
     );
 
     const [churnRisks, stockoutRisks, deadStock] = await Promise.all([
@@ -545,7 +583,7 @@ export class DashboardService {
 
   private async getChurnRisk(
     prisma: ReturnType<typeof this['prisma']>,
-    cutoff: Date
+    cutoff: Date,
   ) {
     const customers = await prisma.customer.findMany({
       where: { tenantId: this.tenantId },
@@ -592,7 +630,7 @@ export class DashboardService {
 
   private async getStockoutPrediction(
     prisma: ReturnType<typeof this['prisma']>,
-    historyStart: Date
+    historyStart: Date,
   ) {
     const now = new Date();
 
@@ -627,7 +665,7 @@ export class DashboardService {
         };
       }
       productMap[key].totalQty = productMap[key].totalQty.add(
-        item.quantity as any
+        item.quantity as any,
       );
       const d = item.invoice.issueDate;
       const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -694,22 +732,20 @@ export class DashboardService {
       }
     }
 
-    predictions.sort(
-      (a, b) => a.daysUntilStockout - b.daysUntilStockout
-    );
+    predictions.sort((a, b) => a.daysUntilStockout - b.daysUntilStockout);
 
     return predictions;
   }
 
   private async getDeadStock(
     prisma: ReturnType<typeof this['prisma']>,
-    cutoff: Date
+    cutoff: Date,
   ) {
     const soldProductIdsRaw = await prisma.invoiceItem.findMany({
       where: {
         tenantId: this.tenantId,
         invoice: {
-          status: { in: ['Posted', 'Partial},
+          status: { in: ['Posted', 'Partial', 'Paid'] },
           issueDate: { gte: cutoff },
         },
       },
@@ -720,7 +756,7 @@ export class DashboardService {
     });
 
     const soldProductIds = new Set(
-      soldProductIdsRaw.map((i) => i.productId)
+      soldProductIdsRaw.map((i) => i.productId),
     );
 
     const stockAgg = await prisma.stockQuant.groupBy({
@@ -756,14 +792,14 @@ export class DashboardService {
         acc[p.id] = p.name;
         return acc;
       },
-      {}
+      {},
     );
 
     const result = candidates.map((c) => ({
       productId: c.productId,
       productName: productNameMap[c.productId] || 'Product',
       quantity: Number(
-        (c._sum.quantity ?? new Prisma.Decimal(0)).toString()
+        (c._sum.quantity ?? new Prisma.Decimal(0)).toString(),
       ),
     }));
 
@@ -820,7 +856,7 @@ export class DashboardService {
         acc[row.invoiceId!] = row._sum.amount ?? new Prisma.Decimal(0);
         return acc;
       },
-      {}
+      {},
     );
 
     const debtors: {
@@ -834,7 +870,7 @@ export class DashboardService {
     for (const invoice of invoices) {
       const total = invoice.totalAmount as unknown as Prisma.Decimal;
       const paid = paidMap[invoice.id] ?? new Prisma.Decimal(0);
-      const balance = total.minus ? total.minus(paid) : total.sub(paid);
+      const balance = total.sub(paid);
       // Using gt(0.01) to avoid floating rounding noise
       if (balance.gt(new Prisma.Decimal(0.01))) {
         debtors.push({

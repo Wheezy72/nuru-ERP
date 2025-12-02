@@ -21,4 +21,28 @@ export class TenantService {
 
     return tenant?.features || {};
   }
+
+  async updateFeatures(patch: Record<string, unknown>) {
+    const prisma = this.prisma;
+
+    const current = await prisma.tenant.findFirst({
+      where: { id: this.tenantId },
+      select: { features: true },
+    });
+
+    const merged = {
+      ...(current?.features || {}),
+      ...patch,
+    };
+
+    const updated = await prisma.tenant.update({
+      where: { id: this.tenantId },
+      data: {
+        features: merged,
+      },
+      select: { features: true },
+    });
+
+    return updated.features || {};
+  }
 }
