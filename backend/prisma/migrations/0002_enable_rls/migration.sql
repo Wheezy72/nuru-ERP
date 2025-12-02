@@ -36,6 +36,8 @@ DECLARE
     'public."Project"',
     'public."PurchaseOrder"',
     'public."PurchaseOrderItem"',
+    'public."SupplierInvoice"',
+    'public."SupplierInvoiceItem"',
     'public."GLAccount"',
     'public."GLJournalEntry"',
     'public."GLJournalLine"',

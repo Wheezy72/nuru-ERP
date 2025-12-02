@@ -18,6 +18,7 @@ import { SetupPage } from '@/pages/settings/SetupPage';
 import { PurchaseOrdersPage } from '@/pages/procurement/PurchaseOrdersPage';
 import { ManufacturingPage } from '@/pages/manufacturing/ManufacturingPage';
 import { ProjectsPage } from '@/pages/projects/ProjectsPage';
+import { AssetsPage } from '@/pages/accounting/AssetsPage';
 
 export function App() {
   return (
@@ -36,6 +37,7 @@ export function App() {
           <Route path="/procurement/purchase-orders" element={<PurchaseOrdersPage />} />
           <Route path="/manufacturing" element={<ManufacturingPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/accounting/assets" element={<AssetsPage />} />
           <Route path="/payroll/casuals" element={<PayCasualsPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />

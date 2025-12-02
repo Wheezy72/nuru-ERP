@@ -163,6 +163,8 @@ const getBaseClient = () => {
   return globalPrisma;
 };
 
+export const prisma = getBaseClient();
+
 /**
  * Returns a Prisma client instance extended with RLS support.
  * For every query, it wraps execution in a transaction where the

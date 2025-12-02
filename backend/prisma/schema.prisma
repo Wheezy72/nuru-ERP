@@ -43,18 +43,20 @@ model Tenant {
   // New modules
   stockTransfers      StockTransfer[]
   stockTransferItems  StockTransferItem[]
-  suppliers           Supplier[]
-  purchaseOrders      PurchaseOrder[]
-  purchaseOrderItems  PurchaseOrderItem[]
-  glAccounts          GLAccount[]
-  glJournalEntries    GLJournalEntry[]
-  glJournalLines      GLJournalLine[]
-  projects            Project[]
-  billsOfMaterial     BillOfMaterial[]
-  billOfMaterialItems BillOfMaterialItem[]
-  productionOrders    ProductionOrder[]
-   assets              Asset[]
-   depreciationRuns    DepreciationRun[]
+  suppliers            Supplier[]
+  purchaseOrders       PurchaseOrder[]
+  purchaseOrderItems   PurchaseOrderItem[]
+  supplierInvoices     SupplierInvoice[]
+  supplierInvoiceItems SupplierInvoiceItem[]
+  glAccounts           GLAccount[]
+  glJournalEntries     GLJournalEntry[]
+  glJournalLines       GLJournalLine[]
+  projects             Project[]
+  billsOfMaterial      BillOfMaterial[]
+  billOfMaterialItems  BillOfMaterialItem[]
+  productionOrders     ProductionOrder[]
+  assets               Asset[]
+  depreciationRuns     DepreciationRun[]
 }
 
 
@@ -95,9 +97,10 @@ model UnitOfMeasure {
   baseUnit     UnitOfMeasure?  @relation("BaseUnit", fields: [baseUnitId], references: [id])
   derivedUnits UnitOfMeasure[] @relation("BaseUnit")
 
-  products       Product[]
-  stockQuants    StockQuant[]
-  productBatches ProductBatch[]
+  products             Product[]
+  stockQuants          StockQuant[]
+  productBatches       ProductBatch[]
+  supplierInvoiceItems SupplierInvoiceItem[]
 
   @@index([tenantId])
   @@index([tenantId, category])
@@ -140,6 +143,7 @@ model Product {
   batches          ProductBatch[]
   stockQuants      StockQuant[]
   invoiceItems     InvoiceItem[]
+  supplierInvoiceItems SupplierInvoiceItem[]
 
   @@index([tenantId])
   @@unique([tenantId, sku])
@@ -245,20 +249,23 @@ model InvoiceItem {
 }
 
 model Transaction {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid
-  invoiceId   String?  @db.Uuid
-  accountId   String?  @db.Uuid
-  amount      Decimal
-  type        String   // "Credit", "Debit"
-  reference   String?
-  createdAt   DateTime @default(now())
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  invoiceId        String?  @db.Uuid
+  accountId        String?  @db.Uuid
+  supplierInvoiceId String? @db.Uuid
+  amount           Decimal
+  type             String   // "Credit", "Debit"
+  reference        String?
+  createdAt        DateTime @default(now())
 
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  invoice     Invoice?  @relation(fields: [invoiceId], references: [id])
-  account     Account?  @relation(fields: [accountId], references: [id])
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  invoice          Invoice?         @relation(fields: [invoiceId], references: [id])
+  account          Account?         @relation(fields: [accountId], references: [id])
+  supplierInvoice  SupplierInvoice? @relation(fields: [supplierInvoiceId], references: [id])
 
   @@index([tenantId])
+  @@index([tenantId, supplierInvoiceId])
 }
 
 enum AccountType {
@@ -500,8 +507,9 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant         Tenant         @relation(fields: [tenantId], references: [id])
-  purchaseOrders PurchaseOrder[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  purchaseOrders  PurchaseOrder[]
+  supplierInvoices SupplierInvoice[]
 
   @@index([tenantId])
 }
@@ -564,6 +572,47 @@ model PurchaseOrderItem {
 
   @@index([tenantId])
   @@index([tenantId, purchaseOrderId])
+}
+
+model SupplierInvoice {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  supplierId   String   @db.Uuid
+  invoiceNo    String
+  status       String   // "Draft", "Posted", "Partial", "Paid"
+  invoiceDate  DateTime
+  dueDate      DateTime?
+  totalAmount  Decimal  @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  supplier     Supplier @relation(fields: [supplierId], references: [id])
+  items        SupplierInvoiceItem[]
+  transactions Transaction[]
+
+  @@index([tenantId])
+  @@unique([tenantId, invoiceNo])
+}
+
+model SupplierInvoiceItem {
+  id                String        @id @default(uuid()) @db.Uuid
+  tenantId          String        @db.Uuid
+  supplierInvoiceId String        @db.Uuid
+  productId         String?       @db.Uuid
+  quantity          Decimal
+  unitCost          Decimal
+  uomId             String?       @db.Uuid
+  lineTotal         Decimal       @default(0)
+  taxRate           TaxRate?
+
+  tenant            Tenant        @relation(fields: [tenantId], references: [id])
+  supplierInvoice   SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id])
+  product           Product?      @relation(fields: [productId], references: [id])
+  uom               UnitOfMeasure? @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, supplierInvoiceId])
 }
 
 model GLAccount {

@@ -18,6 +18,7 @@ type NavItem = {
     | 'HR'
     | 'Maker'
     | 'Planner'
+    | 'Accounting'
     | 'Settings';
   roles?: Role[];
   featureFlag?: string;
@@ -107,6 +108,12 @@ const navItems: NavItem[] = [
     path: '/projects',
     group: 'Planner',
     roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Assets & Depreciation',
+    path: '/accounting/assets',
+    group: 'Accounting',
+    roles: ['ADMIN'],
   },
   {
     label: 'Pay Casuals',
