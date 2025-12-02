@@ -1802,6 +1802,15 @@ async function main() {
   await createUsers(cityBuilders.id);
   await createDefaultAdmin(nuru.id);
 
+  // Ensure a basic chart of accounts for all tenants
+  await new AccountingService(nuru.id).ensureDefaultAccounts();
+  await new AccountingService(wamama.id).ensureDefaultAccounts();
+  await new AccountingService(safari.id).ensureDefaultAccounts();
+  await new AccountingService(stMarys.id).ensureDefaultAccounts();
+  await new AccountingService(greenLeaf.id).ensureDefaultAccounts();
+  await new AccountingService(nairobiFurniture.id).ensureDefaultAccounts();
+  await new AccountingService(cityBuilders.id).ensureDefaultAccounts();
+
   const { products, location } = await seedInventory(nuru.id);
   const customers = await seedCustomers(nuru.id);
   await seedInvoices(nuru.id, location.id, products, customers);
@@ -1817,6 +1826,12 @@ async function main() {
   await seedManufacturingTenant(nairobiFurniture.id);
   // Construction tenant seed (projects / job costing)
   await seedConstructionTenant(cityBuilders.id);
+
+  // Normalise any negative stock that might have occurred due to randomised seeding
+  await prisma.stockQuant.updateMany({
+    where: { quantity: { lt: 0 } },
+    data: { quantity: 0 },
+  });
 
   console.log('Seeding complete.');
 }

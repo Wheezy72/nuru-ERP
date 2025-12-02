@@ -6,6 +6,11 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+  useTenantFeatures,
+  RoleVisibility,
+  TenantFeatures,
+} from '@/hooks/useTenantFeatures';
+import {
   BarChart,
   Bar,
   XAxis,
@@ -78,8 +83,55 @@ type DashboardSummary = {
   debtors: Debtor[];
 };
 
+function getRoleVisibility(features?: TenantFeatures): RoleVisibility {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const raw = window.localStorage.getItem('auth_role') as
+    | 'ADMIN'
+    | 'MANAGER'
+    | 'CASHIER'
+    | null;
+
+  const base: RoleVisibility =
+    raw === 'CASHIER'
+      ? {
+          canViewDailyTotals: false,
+          canViewDebtors: false,
+          canViewMargins: false,
+          canViewGLReports: false,
+        }
+      : {
+          canViewDailyTotals: true,
+          canViewDebtors: true,
+          canViewMargins: raw === 'ADMIN',
+          canViewGLReports: raw === 'ADMIN',
+        };
+
+  if (!features || !features.roleVisibility || !raw) {
+    return base;
+  }
+
+  const fromTenant = features.roleVisibility[
+    raw as keyof NonNullable<TenantFeatures['roleVisibility']>
+  ] as RoleVisibility | undefined;
+
+  if (!fromTenant) {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...fromTenant,
+  };
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { data: features } = useTenantFeatures();
+  const roleVisibility = getRoleVisibility(features);
+
   const [startDate, setStartDate] = React.useState<string>('');
   const [endDate, setEndDate] = React.useState<string>('');
   const [showCustomize, setShowCustomize] = React.useState(false);
@@ -246,7 +298,7 @@ export function DashboardPage() {
       )}
 
       <div className="grid gap-4 md:grid-cols-4 auto-rows-[minmax(0,_1fr)]">
-        {visibleCards.sales && (
+        {visibleCards.sales && roleVisibility.canViewDailyTotals !== false && (
           <Card className="col-span-2 p-4 flex flex-col justify-between">
             <div className="text-xs font-semibold uppercase text-muted-foreground">
               Total Sales
@@ -265,7 +317,7 @@ export function DashboardPage() {
           </Card>
         )}
 
-        {visibleCards.cash && (
+        {visibleCards.cash && roleVisibility.canViewDailyTotals !== false && (
           <Card className="col-span-2 p-4 flex flex-col justify-between">
             <div className="text-xs font-semibold uppercase text-muted-foreground">
               Cash at Hand
@@ -497,7 +549,7 @@ export function DashboardPage() {
           </Card>
         )}
 
-        {visibleCards.debtors && (
+        {visibleCards.debtors && roleVisibility.canViewDebtors !== false && (
           <Card className="md:col-span-2 p-4 flex flex-col">
             <div className="mb-2 flex items-center justify-between text-sm font-semibold text-foreground">
               <span>Debtors</span>

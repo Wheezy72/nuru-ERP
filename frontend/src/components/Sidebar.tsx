@@ -2,7 +2,7 @@ import * as React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useTenantFeatures } from '@/hooks/useTenantFeatures';
+import { useTenantFeatures, TenantFeatures, RoleVisibility } from '@/hooks/useTenantFeatures';
 
 type Role = 'ADMIN' | 'MANAGER' | 'CASHIER';
 
@@ -22,6 +22,36 @@ type NavItem = {
   roles?: Role[];
   featureFlag?: string;
 };
+
+function resolveRoleVisibility(
+  features: TenantFeatures | undefined,
+  role: Role | null,
+): RoleVisibility {
+  const base: RoleVisibility = {
+    canViewDailyTotals: true,
+    canViewDebtors: true,
+    canViewMargins: false,
+    canViewGLReports: false,
+  };
+
+  if (!features || !role) {
+    return base;
+  }
+
+  const fromTenant =
+    features.roleVisibility &&
+    typeof features.roleVisibility === 'object' &&
+    (features.roleVisibility[role] as RoleVisibility | undefined);
+
+  if (!fromTenant) {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...fromTenant,
+  };
+}
 
 const navItems: NavItem[] = [
   {
@@ -128,6 +158,7 @@ export function Sidebar() {
       : undefined;
 
   const isSchool = tenantType === 'SCHOOL';
+  const mode = (features && (features as any).mode) || 'FULL';
 
   React.useEffect(() => {
     const stored = localStorage.getItem('auth_role') as Role | null;
@@ -138,6 +169,8 @@ export function Sidebar() {
     features && typeof (features as any).enableChama === 'boolean'
       ? (features as any).enableChama
       : true;
+
+  const roleVisibility = resolveRoleVisibility(features, role);
 
   return (
     <aside
@@ -150,14 +183,21 @@ export function Sidebar() {
         <div className={cn('font-semibold tracking-tight', collapsed && 'hidden')}>
           Nuru
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 text-xs"
-          onClick={() => setCollapsed((v) => !v)}
-        >
-          {collapsed ? '»' : '«'}
-        </Button>
+        <div className="flex items-center gap-1">
+          {!collapsed && (
+            <span className="text-[0.6rem] rounded-full bg-background/30 px-2 py-0.5 text-secondary-foreground/80">
+              {mode === 'SIMPLE' ? 'Simple' : 'Full'}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-xs"
+            onClick={() => setCollapsed((v) => !v)}
+          >
+            {collapsed ? '»' : '«'}
+          </Button>
+        </div>
       </div>
 
       <nav className="flex-1 space-y-4 px-2 py-2 text-xs">
@@ -167,6 +207,14 @@ export function Sidebar() {
             if (item.featureFlag === 'enableChama' && !enableChama) return false;
             if (!role) return false;
             if (item.roles && !item.roles.includes(role)) return false;
+            // In SIMPLE mode, hide Maker/Planner/Banking/Settings for non-admins
+            if (
+              mode === 'SIMPLE' &&
+              role !== 'ADMIN' &&
+              (group === 'Maker' || group === 'Planner' || group === 'Banking' || group === 'Settings')
+            ) {
+              return false;
+            }
             return true;
           });
 

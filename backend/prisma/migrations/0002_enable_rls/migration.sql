@@ -43,7 +43,9 @@ DECLARE
     'public."BillOfMaterialItem"',
     'public."ProductionOrder"',
     'public."Employee"',
-    'public."PasswordResetToken"'
+    'public."PasswordResetToken"',
+    'public."Asset"',
+    'public."DepreciationRun"'
   ];
   tbl text;
 BEGIN
