@@ -9,7 +9,16 @@ type Role = 'ADMIN' | 'MANAGER' | 'CASHIER';
 type NavItem = {
   label: string;
   path: string;
-  group: 'Overview' | 'Sales' | 'Inventory' | 'CRM' | 'Banking' | 'HR' | 'Settings';
+  group:
+    | 'Overview'
+    | 'Sales'
+    | 'Inventory'
+    | 'CRM'
+    | 'Banking'
+    | 'HR'
+    | 'Maker'
+    | 'Planner'
+    | 'Settings';
   roles?: Role[];
   featureFlag?: string;
 };
@@ -52,6 +61,24 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
+    label: 'Purchase Orders',
+    path: '/procurement/purchase-orders',
+    group: 'Maker',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Manufacturing',
+    path: '/manufacturing',
+    group: 'Maker',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
+    label: 'Projects',
+    path: '/projects',
+    group: 'Planner',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     label: 'Pay Casuals',
     path: '/payroll/casuals',
     group: 'HR',
@@ -83,6 +110,8 @@ const groups: NavItem['group'][] = [
   'Sales',
   'Inventory',
   'CRM',
+  'Maker',
+  'Planner',
   'HR',
   'Banking',
   'Settings',
