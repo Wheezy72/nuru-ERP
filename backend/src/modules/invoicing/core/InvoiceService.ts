@@ -2,6 +2,8 @@ import { Prisma, TaxRate } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { InventoryService } from '../../inventory/core/InventoryService';
 import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
+import { LoyaltyService } from '../../customers/core/LoyaltyService';
+import { computeTaxBreakdown } from './taxMath';
 
 export class InvoiceService {
   private tenantId: string;
@@ -224,47 +226,12 @@ export class InvoiceService {
       throw new Error('Invoice not found');
     }
 
-    const breakdown = {
-      vat16: { taxable: new Prisma.Decimal(0), tax: new Prisma.Decimal(0) },
-      vat8: { taxable: new Prisma.Decimal(0), tax: new Prisma.Decimal(0) },
-      exempt: { amount: new Prisma.Decimal(0) },
-      zeroRated: { amount: new Prisma.Decimal(0) },
-      totalTax: new Prisma.Decimal(0),
-    };
-
-    const rateFor = (rate: TaxRate) => {
-      switch (rate) {
-        case 'VAT_16':
-          return new Prisma.Decimal(0.16);
-        case 'VAT_8':
-          return new Prisma.Decimal(0.08);
-        case 'EXEMPT':
-        case 'ZERO':
-        default:
-          return new Prisma.Decimal(0);
-      }
-    };
-
-    for (const item of invoice.items) {
-      const amount = item.lineTotal;
-      const rate = item.taxRate as TaxRate;
-      const r = rateFor(rate);
-      const tax = amount.mul(r);
-
-      if (rate === 'VAT_16') {
-        breakdown.vat16.taxable = breakdown.vat16.taxable.add(amount);
-        breakdown.vat16.tax = breakdown.vat16.tax.add(tax);
-      } else if (rate === 'VAT_8') {
-        breakdown.vat8.taxable = breakdown.vat8.taxable.add(amount);
-        breakdown.vat8.tax = breakdown.vat8.tax.add(tax);
-      } else if (rate === 'EXEMPT') {
-        breakdown.exempt.amount = breakdown.exempt.amount.add(amount);
-      } else if (rate === 'ZERO') {
-        breakdown.zeroRated.amount = breakdown.zeroRated.amount.add(amount);
-      }
-
-      breakdown.totalTax = breakdown.totalTax.add(tax);
-    }
+    const taxBreakdown = computeTaxBreakdown(
+      invoice.items.map((item) => ({
+        lineTotal: item.lineTotal as unknown as Prisma.Decimal,
+        taxRate: item.taxRate as TaxRate,
+      }))
+    );
 
     return {
       invoice: {
@@ -275,7 +242,7 @@ export class InvoiceService {
         customerKraPin: invoice.customer.kraPin,
         totalAmount: invoice.totalAmount,
       },
-      taxBreakdown: breakdown,
+      taxBreakdown,
       items: invoice.items.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -458,7 +425,31 @@ export class InvoiceService {
       },
     });
 
+    // Award loyalty points once an invoice reaches Paid status.
+    if (newStatus === 'Paid') {
+      try {
+        const loyalty = new LoyaltyService(this.tenantId);
+        await loyalty.awardForInvoice(invoice.id);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(
+          'Failed to award loyalty points for invoice',
+          invoice.id,
+          err,
+        );
+      }
+    }
+
     return updated;
+  }
+
+  /**
+   * Redeem loyalty points against an invoice using the LoyaltyService.
+   * This is a thin wrapper used by the HTTP route.
+   */
+  async redeemLoyalty(invoiceId: string, points: number, userId?: string | null) {
+    const loyalty = new LoyaltyService(this.tenantId);
+    return loyalty.redeemForInvoice(invoiceId, points, userId);
   }
 
   /**

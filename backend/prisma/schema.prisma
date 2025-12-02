@@ -21,25 +21,38 @@ model Tenant {
   features    Json?    @db.JsonB
 
   // Relations
-  users              User[]
-  unitsOfMeasure     UnitOfMeasure[]
-  locations          Location[]
-  products           Product[]
-  productBatches     ProductBatch[]
-  stockQuants        StockQuant[]
-  customers          Customer[]
-  invoices           Invoice[]
-  transactions       Transaction[]
-  members            Member[]
-  accounts           Account[]
-  loans              Loan[]
-  sessions           Session[]
-  systemLogs         SystemLog[]
-  chamaConstitution  ChamaConstitution?
-  stockTakes         StockTake[]
-  stockTakeItems     StockTakeItem[]
-  employees          Employee[]
+  users               User[]
+  unitsOfMeasure      UnitOfMeasure[]
+  locations           Location[]
+  products            Product[]
+  productBatches      ProductBatch[]
+  stockQuants         StockQuant[]
+  customers           Customer[]
+  invoices            Invoice[]
+  transactions        Transaction[]
+  members             Member[]
+  accounts            Account[]
+  loans               Loan[]
+  sessions            Session[]
+  systemLogs          SystemLog[]
+  chamaConstitution   ChamaConstitution?
+  stockTakes          StockTake[]
+  stockTakeItems      StockTakeItem[]
+  employees           Employee[]
   passwordResetTokens PasswordResetToken[]
+  // New modules
+  stockTransfers      StockTransfer[]
+  stockTransferItems  StockTransferItem[]
+  suppliers           Supplier[]
+  purchaseOrders      PurchaseOrder[]
+  purchaseOrderItems  PurchaseOrderItem[]
+  glAccounts          GLAccount[]
+  glJournalEntries    GLJournalEntry[]
+  glJournalLines      GLJournalLine[]
+  projects            Project[]
+  billsOfMaterial     BillOfMaterial[]
+  billOfMaterialItems BillOfMaterialItem[]
+  productionOrders    ProductionOrder[]
 }
 
 
@@ -97,8 +110,11 @@ model Location {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id])
-  stockQuants StockQuant[]
+  tenant               Tenant           @relation(fields: [tenantId], references: [id])
+  stockQuants          StockQuant[]
+  stockTransfersFrom   StockTransfer[]  @relation("FromLocation")
+  stockTransfersTo     StockTransfer[]  @relation("ToLocation")
+  productionOrders     ProductionOrder[]
 
   @@index([tenantId])
   @@unique([tenantId, code])
@@ -171,6 +187,7 @@ model Customer {
   phone     String?
   email     String?
   kraPin    String?  // KRA PIN for compliance (optional)
+  loyaltyPoints Decimal @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -184,8 +201,9 @@ model Invoice {
   id           String        @id @default(uuid()) @db.Uuid
   tenantId     String        @db.Uuid
   customerId   String        @db.Uuid
+  projectId    String?       @db.Uuid
   invoiceNo    String
-  status       String        // "Draft", "Posted", "Paid", etc.
+  status       String        // "Draft", "Posted", "Paid", "Partial"
   issueDate    DateTime
   dueDate      DateTime?
   totalAmount  Decimal       @default(0)
@@ -194,10 +212,13 @@ model Invoice {
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   customer     Customer      @relation(fields: [customerId], references: [id])
+  project      Project?      @relation(fields: [projectId], references: [id])
   items        InvoiceItem[]
   transactions Transaction[]
+  glJournalEntries GLJournalEntry[]
 
   @@index([tenantId])
+  @@index([tenantId, projectId])
   @@unique([tenantId, invoiceNo])
 }
 
@@ -360,6 +381,40 @@ enum StockTakeItemStatus {
   COUNTED
 }
 
+enum StockTransferStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ISSUED
+  RECEIVED
+  CANCELLED
+}
+
+enum GLAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum ProjectStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum ProductionOrderStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 model StockTake {
   id              String   @id @default(uuid()) @db.Uuid
   tenantId        String   @db.Uuid
@@ -395,6 +450,227 @@ model StockTakeItem {
 
   @@index([tenantId])
   @@index([tenantId, stockTakeId])
+}
+
+model StockTransfer {
+  id              String             @id @default(uuid()) @db.Uuid
+  tenantId        String             @db.Uuid
+  fromLocationId  String             @db.Uuid
+  toLocationId    String             @db.Uuid
+  status          StockTransferStatus @default(DRAFT)
+  createdByUserId String?            @db.Uuid
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  from       Location @relation("FromLocation", fields: [fromLocationId], references: [id])
+  to         Location @relation("ToLocation", fields: [toLocationId], references: [id])
+  createdBy  User?    @relation(fields: [createdByUserId], references: [id])
+  items      StockTransferItem[]
+
+  @@index([tenantId])
+}
+
+model StockTransferItem {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  stockTransferId String        @db.Uuid
+  productId       String        @db.Uuid
+  uomId           String        @db.Uuid
+  quantity        Decimal
+
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id])
+  product         Product       @relation(fields: [productId], references: [id])
+  uom             UnitOfMeasure @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, stockTransferId])
+}
+
+model Supplier {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  kraPin    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  purchaseOrders PurchaseOrder[]
+
+  @@index([tenantId])
+}
+
+model Project {
+  id        String        @id @default(uuid()) @db.Uuid
+  tenantId  String        @db.Uuid
+  name      String
+  code      String
+  status    ProjectStatus @default(OPEN)
+  startDate DateTime
+  endDate   DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model PurchaseOrder {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  supplierId     String              @db.Uuid
+  projectId      String?             @db.Uuid
+  status         PurchaseOrderStatus @default(DRAFT)
+  orderDate      DateTime
+  expectedDate   DateTime?
+  totalAmount    Decimal             @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  tenant         Tenant              @relation(fields: [tenantId], references: [id])
+  supplier       Supplier            @relation(fields: [supplierId], references: [id])
+  project        Project?            @relation(fields: [projectId], references: [id])
+  items          PurchaseOrderItem[]
+  glJournalEntries GLJournalEntry[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  purchaseOrderId String        @db.Uuid
+  productId       String        @db.Uuid
+  quantity        Decimal
+  unitCost        Decimal
+  uomId           String        @db.Uuid
+  lineTotal       Decimal       @default(0)
+
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  product         Product       @relation(fields: [productId], references: [id])
+  uom             UnitOfMeasure @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, purchaseOrderId])
+}
+
+model GLAccount {
+  id        String        @id @default(uuid()) @db.Uuid
+  tenantId  String        @db.Uuid
+  code      String
+  name      String
+  type      GLAccountType
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  lines     GLJournalLine[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model GLJournalEntry {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @db.Uuid
+  date             DateTime
+  description      String
+  invoiceId        String?       @db.Uuid
+  purchaseOrderId  String?       @db.Uuid
+  createdAt        DateTime      @default(now())
+
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  invoice          Invoice?      @relation(fields: [invoiceId], references: [id])
+  purchaseOrder    PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  lines            GLJournalLine[]
+
+  @@index([tenantId])
+  @@index([tenantId, invoiceId])
+  @@index([tenantId, purchaseOrderId])
+}
+
+model GLJournalLine {
+  id             String         @id @default(uuid()) @db.Uuid
+  tenantId       String         @db.Uuid
+  journalEntryId String         @db.Uuid
+  accountId      String         @db.Uuid
+  debit          Decimal        @default(0)
+  credit         Decimal        @default(0)
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  journalEntry   GLJournalEntry @relation(fields: [journalEntryId], references: [id])
+  account        GLAccount      @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, journalEntryId])
+}
+
+model BillOfMaterial {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  productId   String   @db.Uuid
+  name        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  product     Product  @relation(fields: [productId], references: [id])
+  items       BillOfMaterialItem[]
+  productionOrders ProductionOrder[]
+
+  @@index([tenantId])
+  @@unique([tenantId, productId])
+}
+
+model BillOfMaterialItem {
+  id                 String        @id @default(uuid()) @db.Uuid
+  tenantId           String        @db.Uuid
+  bomId              String        @db.Uuid
+  componentProductId String        @db.Uuid
+  uomId              String        @db.Uuid
+  quantity           Decimal
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id])
+  bom                BillOfMaterial @relation(fields: [bomId], references: [id])
+  componentProduct   Product       @relation(fields: [componentProductId], references: [id])
+  uom                UnitOfMeasure @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, bomId])
+}
+
+model ProductionOrder {
+  id          String               @id @default(uuid()) @db.Uuid
+  tenantId    String               @db.Uuid
+  bomId       String               @db.Uuid
+  productId   String               @db.Uuid
+  locationId  String               @db.Uuid
+  quantity    Decimal
+  status      ProductionOrderStatus @default(PLANNED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  bom         BillOfMaterial     @relation(fields: [bomId], references: [id])
+  product     Product            @relation(fields: [productId], references: [id])
+  location    Location           @relation(fields: [locationId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
 model SystemLog {

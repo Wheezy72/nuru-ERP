@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import morgan from 'morgan';
 
 import inventoryRoutes from './modules/inventory/http/inventory.routes';
@@ -20,13 +21,14 @@ const app = express();
 
 const corsOrigin = process.env.FRONTEND_ORIGIN || '*';
 
+// Basic security headers. CSP can be tightened per deployment.
 app.use(
-  cors({
-    origin: corsOrigin,
+  helmet({
+    contentSecurityPolicy: false, // keep simple; frontend can define its own CSP
   })
 );
-app.use(express.json());
-app.use(morgan('dev'));
+
+));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/inventory', inventoryRoutes);

@@ -1,5 +1,6 @@
 import { Prisma, UnitOfMeasure, StockQuant } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
+import { computeConversionFactorFromPaths } from './uomConversion';
 
 export class InventoryService {
   private tenantId: string;
@@ -337,17 +338,9 @@ export class InventoryService {
       throw new Error('Units of measure are in different trees and cannot be converted');
     }
 
-    const factorToRoot = (path: UnitOfMeasure[]) => {
-      return path.reduce((acc, u, index) => {
-        if (index === 0) return new Prisma.Decimal(1);
-        return acc.mul(u.ratio);
-      }, new Prisma.Decimal(1));
-    };
+    const factor = computeConversionFactorFromPaths(sourcePath, targetPath);
 
-    const sourceToRoot = factorToRoot(sourcePath);
-    const targetToRoot = factorToRoot(targetPath);
-
-    // sourceQty * (sourceToRoot / targetToRoot) = targetQty
-    return sourceToRoot.div(targetToRoot);
+    // sourceQty * factor = targetQty
+    return factor;
   }
 }

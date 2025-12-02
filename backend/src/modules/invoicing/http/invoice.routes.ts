@@ -143,6 +143,29 @@ router.post('/:id/remind', async (req, res, next) => {
   }
 });
 
+router.post('/:id/redeem-loyalty', async (req, res, next) => {
+  try {
+    const tenantId = getTenantId(req);
+    const service = new InvoiceService(tenantId);
+    const { points } = req.body as { points?: number };
+
+    if (typeof points !== 'number' || points <= 0) {
+      return res.status(400).json({ message: 'points (positive number) is required' });
+    }
+
+    const userIdHeader = req.headers['x-user-id'];
+    const userId =
+      (Array.isArray(userIdHeader) ? userIdHeader[0] : userIdHeader)?.toString() ||
+      null;
+
+    const invoice = await service.redeemLoyalty(req.params.id, points, userId);
+
+    res.json(invoice);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/bulk/school-term', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);

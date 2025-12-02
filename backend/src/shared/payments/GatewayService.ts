@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../prisma/client';
+import { LoyaltyService } from '../../modules/customers/core/LoyaltyService';
 
 export class GatewayService {
   private tenantId: string;
@@ -219,6 +220,11 @@ export class GatewayService {
         },
       },
     });
+
+    if (newStatus === 'Paid') {
+      const loyalty = new LoyaltyService(this.tenantId);
+      await loyalty.awardForInvoice(invoice.id);
+    }
 
     return updated;
   }

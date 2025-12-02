@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
+import { isLoanWithinMaxRatio } from './loanRules';
 
 export class ChamaService {
   private tenantId: string;
@@ -156,8 +157,13 @@ export class ChamaService {
         new Prisma.Decimal(0)
       );
 
-      const maxAllowed = totalContributions.mul(constitution.maxLoanRatio);
-      if (input.principal.gt(maxAllowed)) {
+      const withinLimit = isLoanWithinMaxRatio(
+        totalContributions,
+        constitution.maxLoanRatio as unknown as Prisma.Decimal,
+        input.principal as unknown as Prisma.Decimal
+      );
+
+      if (!withinLimit) {
         throw new Error(
           'Requested principal exceeds maximum allowed by Chama constitution'
         );

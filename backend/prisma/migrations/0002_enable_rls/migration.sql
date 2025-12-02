@@ -27,7 +27,23 @@ DECLARE
     'public."Account"',
     'public."Loan"',
     'public."LoanGuarantor"',
-    'public."Session"'
+    'public."Session"',
+    'public."StockTake"',
+    'public."StockTakeItem"',
+    'public."StockTransfer"',
+    'public."StockTransferItem"',
+    'public."Supplier"',
+    'public."Project"',
+    'public."PurchaseOrder"',
+    'public."PurchaseOrderItem"',
+    'public."GLAccount"',
+    'public."GLJournalEntry"',
+    'public."GLJournalLine"',
+    'public."BillOfMaterial"',
+    'public."BillOfMaterialItem"',
+    'public."ProductionOrder"',
+    'public."Employee"',
+    'public."PasswordResetToken"'
   ];
   tbl text;
 BEGIN
