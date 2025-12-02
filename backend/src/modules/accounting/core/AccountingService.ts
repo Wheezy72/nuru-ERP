@@ -24,9 +24,15 @@ export class AccountingService {
     return createTenantPrismaClient(this.tenantId);
   }
 
-  private async ensureDefaultAccounts(
-    prisma: PrismaClientForTenant,
+  /**
+   * Ensure a minimal chart of accounts per tenant.
+   * This is also invoked from seed.ts to create a standard Kenyan-style CoA.
+   */
+  async ensureDefaultAccounts(
+    prismaOverride?: PrismaClientForTenant,
   ): Promise<DefaultAccounts> {
+    const prisma = prismaOverride ?? this.prisma;
+
     const definitions: {
       code: string;
       name: string;
@@ -52,6 +58,12 @@ export class AccountingService {
         key: 'inventory',
       },
       {
+        code: '1500',
+        name: 'Accumulated Depreciation',
+        type: GLAccountType.ASSET,
+        key: 'accumulatedDepreciation',
+      },
+      {
         code: '4000',
         name: 'Sales Revenue',
         type: GLAccountType.REVENUE,
@@ -68,12 +80,6 @@ export class AccountingService {
         name: 'Depreciation Expense',
         type: GLAccountType.EXPENSE,
         key: 'depreciationExpense',
-      },
-      {
-        code: '1500',
-        name: 'Accumulated Depreciation',
-        type: GLAccountType.ASSET,
-        key: 'accumulatedDepreciation',
       },
     ];
 
@@ -130,6 +136,7 @@ export class AccountingService {
       where: {
         tenantId: this.tenantId,
         invoiceId: invoice.id,
+        description: { contains: 'posted', mode: 'insensitive' },
       },
     });
 
@@ -200,7 +207,7 @@ export class AccountingService {
       where: {
         tenantId: this.tenantId,
         invoiceId: invoice.id,
-        description: { contains: 'Invoice paid', mode: 'insensitive' },
+        description: { contains: 'paid', mode: 'insensitive' },
       },
     });
 
@@ -312,5 +319,45 @@ export class AccountingService {
     });
 
     return entry;
+  }
+
+  /**
+   * Compute a trial balance for the tenant over all periods.
+   * Groups by GL account and returns net balances (debit-positive).
+   */
+  async getTrialBalance() {
+    const prisma = this.prisma;
+
+    const accounts = await prisma.gLAccount.findMany({
+      where: { tenantId: this.tenantId },
+      include: {
+        lines: true,
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    return accounts.map((account) => {
+      const totalDebit = account.lines.reduce(
+        (acc, line) =>
+          acc.add(line.debit as unknown as Prisma.Decimal),
+        new Prisma.Decimal(0),
+      );
+      const totalCredit = account.lines.reduce(
+        (acc, line) =>
+          acc.add(line.credit as unknown as Prisma.Decimal),
+        new Prisma.Decimal(0),
+      );
+      const net = totalDebit.sub(totalCredit);
+
+      return {
+        accountId: account.id,
+        code: account.code,
+        name: account.name,
+        type: account.type,
+        debit: Number(totalDebit.toString()),
+        credit: Number(totalCredit.toString()),
+        net: Number(net.toString()),
+      };
+    });
   }
 }
