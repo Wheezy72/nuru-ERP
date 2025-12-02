@@ -1,327 +1,382 @@
-# Nuru ERP – V1.0
+# Nuru ERP
 
-Nuru is a multi-tenant ERP for African enterprises, built on a PERN stack with strict tenant isolation, inventory and invoicing, chama (table-banking) features, and a Neo-Naturalist UI.
+Multi-tenant ERP for African businesses, with inventory, invoicing, chama/table-banking, projects, simple manufacturing and a Kenyan tax/compliance backbone.
 
-This README focuses on what you need to configure to run Nuru in a production-like environment.
+<p align="center">
+  <img src="https://img.shields.io/badge/Stack-PERN-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/API-Node.js%2018+-339933?logo=node.js&logoColor=white&style=flat-square" />
+  <img src="https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB?logo=react&logoColor=white&style=flat-square" />
+  <img src="https://img.shields.io/badge/DB-PostgreSQL-336791?logo=postgresql&logoColor=white&style=flat-square" />
+  <img src="https://img.shields.io/badge/Multi--tenant-RLS%20secured-111827?style=flat-square" />
+</p>
 
-## 1. Stack Overview
+---
 
-- Backend: Node.js, Express, Prisma, PostgreSQL
-- Frontend: React, Vite, Tailwind, TanStack Query
-- Auth: JWT (email/password + optional Google OAuth)
-- Data Isolation: tenantId on all tables, designed for PostgreSQL Row Level Security (RLS)
-- Extras: PWA support via vite-plugin-pwa, WhatsApp notifications, M-Pesa STK Push integration (Daraja sandbox/production)
+## Contents
 
-## 2. Environment Variables
+- [What Nuru Is](#what-nuru-is)
+- [Feature Highlights](#feature-highlights)
+- [Architecture](#architecture)
+- [Quickstart (Local Dev)](#quickstart-local-dev)
+- [Environment Variables (Quick Reference)](#environment-variables-quick-reference)
+- [Seed Data & Demo Tenants](#seed-data--demo-tenants)
+- [Production Checklist](#production-checklist)
 
-### 2.1 Backend (.env)
+---
 
-Required for basic operation:
+## What Nuru Is
 
-- `DATABASE_URL`
-  - PostgreSQL connection string.
-  - Example: `postgresql://user:password@localhost:5432/nuru`
+Nuru is an opinionated ERP built around how real Kenyan and African SMEs work:
 
-- `JWT_SECRET`
-  - Strong secret key used to sign JWTs.
-  - Example: `JWT_SECRET=change_me_to_a_long_random_string`
+- Multi-tenant from day one, with strict PostgreSQL Row Level Security.
+- Core ERP domains:
+  - Sales, invoicing, POS, debtors.
+  - Inventory & procurement.
+  - General ledger and basic fixed assets.
+  - Chama/table-banking and microfinance.
+  - Simple manufacturing (BOM + production orders).
+  - Projects / job costing.
+- Deeply local:
+  - M-Pesa STK Push, Pesapal card/bank.
+  - KRA-friendly VAT breakdown and CSV exports.
+  - WhatsApp notifications for invoices and reminders.
 
-Google OAuth (backend verification):
+It’s meant to be powerful but still understandable for a hardware shop, chama, school, or small manufacturer.
 
-- `GOOGLE_CLIENT_ID`
-  - OAuth 2.0 Client ID from Google Cloud (Web application).
-  - Used by the backend to verify ID tokens sent from the frontend.
-  - If missing, Google login requests will fail with:
-    - `Google Client ID not configured`
+---
 
-WhatsApp Business (Cloud API) integration:
+## Feature Highlights
 
-- `WHATSAPP_ACCESS_TOKEN`
-  - Access token for the WhatsApp Cloud API.
-- `WHATSAPP_PHONE_NUMBER_ID`
-  - The phone number ID associated with your WhatsApp Business account.
-- When an invoice is posted, Nuru will attempt to send an invoice summary via WhatsApp to the customer’s phone number.
-- If any of these values are missing, WhatsApp notifications will fail with a clear error such as:
-  - `WHATSAPP_ACCESS_TOKEN not configured`
+### Core Finance & Accounting
 
-M-Pesa (Daraja) integration:
+- General Ledger:
+  - Per-tenant chart of accounts (Assets, Liabilities, Equity, Revenue, Expenses).
+  - Double-entry journals:
+    - Invoice posted → DR Accounts Receivable / CR Sales.
+    - Invoice paid (M-Pesa, card, manual) → DR Cash / CR Accounts Receivable.
+    - Purchase order received → DR Cost of Goods Sold / CR Cash.
+  - Trial balance aggregation per account (debit, credit, net).
 
-- `MPESA_CONSUMER_KEY`
-- `MPESA_CONSUMER_SECRET`
-- `MPESA_SHORTCODE`
-- `MPESA_PASSKEY`
-- `MPESA_BASE_URL`
-- `MPESA_CALLBACK_URL`
+- Accounts Receivable:
+  - Invoices (Draft, Posted, Partial, Paid) with line items and tax codes.
+  - Partial payments, payment history, balance computation.
+  - Debtors list and WhatsApp reminders.
 
-Example for sandbox:
+- Accounts Payable (basic but real):
+  - SupplierInvoice + SupplierInvoiceItem models.
+  - Record supplier invoices (bills) and supplier payments.
+  - AP aging buckets: 0–30, 31–60, 61–90, 90+ days.
 
-```env
-MPESA_CONSUMER_KEY=your_sandbox_consumer_key
-MPESA_CONSUMER_SECRET=your_sandbox_consumer_secret
-MPESA_SHORTCODE=174379
-MPESA_PASSKEY=your_sandbox_passkey
-MPESA_BASE_URL=https://sandbox.safaricom.co.ke
-MPESA_CALLBACK_URL=https://your-public-host/api/payments/mpesa/callback
-```
+- Fixed Assets:
+  - Asset registry:
+    - purchaseDate, purchaseCost, lifespanYears, salvageValue, accumulatedDepreciation.
+  - Depreciation runs:
+    - DepreciationRun table keyed by period (YYYY-MM).
+    - Straight-line depreciation runner:
+      - DR Depreciation Expense / CR Accumulated Depreciation.
+    - Assets & Depreciation screen in the UI.
 
-Notes:
+### Sales, POS, CRM
 
-- `MPESA_BASE_URL`:
-  - Use the sandbox URL for development and the production URL for live traffic.
-- `MPESA_CALLBACK_URL`:
-  - Public URL that Safaricom calls for STK Push callbacks.
-  - Nuru will append `?tenantId=...&invoiceId=...` automatically when initiating STK pushes.
-- If any of these keys are missing, M-Pesa STK Push calls will throw with a clear error such as:
-  - `MPESA_CONSUMER_KEY not configured`
+- POS for day-to-day sales.
+- Customers (or “Students” for school tenants) with KRA PIN, phone, email.
+- Invoices:
+  - Itemised, with TaxRate (VAT_16, VAT_8, EXEMPT, ZERO).
+- Loyalty:
+  - Earn points when paying invoices.
+  - Redeem points against future invoices.
 
-### 2.2 Frontend (.env / .env.local)
+### Inventory & Procurement
 
-Vite expects env variables prefixed with `VITE_`. Some examples:
+- Inventory:
+  - Products with:
+    - UoM hierarchy (base + derived units).
+    - Min stock quantity, categories, active flags.
+  - Stock per location and batch, with expiries for Agrovet scenarios.
+  - Stocktakes and variances.
 
-- `VITE_API_URL`
-  - Base URL for the backend API (without trailing slash).
-  - Example: `VITE_API_URL=http://localhost:4000/api`
+- Procurement:
+  - Suppliers.
+  - PurchaseOrders and PurchaseOrderItems.
+  - Receiving a PO:
+    - Increments stock.
+    - Posts GL entry (DR COGS / CR Cash).
 
-- `VITE_GOOGLE_CLIENT_ID`
-  - Same Client ID as `GOOGLE_CLIENT_ID` on the backend.
-  - Used by the frontend to initialize Google Identity Services.
-  - If missing, the login page will show:
-    - `Google Client ID not configured. Set VITE_GOOGLE_CLIENT_ID in your env.`
+### Manufacturing & Projects
 
-## 3. Authentication & Roles
+- Manufacturing (for simple assembly):
+  - BillOfMaterial (BOM): “4 legs + 1 top = 1 table”.
+  - ProductionOrder:
+    - PLANNED → IN_PROGRESS → COMPLETED.
+    - Integrates with inventory.
 
-- Users authenticate with:
-  - Email + password (tenant-scoped), or
-  - Google OAuth (ID token from Google, verified server-side).
-- Backend issues JWTs that include:
-  - `sub` (user ID)
-  - `tenantId`
-  - `role` (`ADMIN`, `MANAGER`, or `CASHIER`)
-  - `email`
-- RBAC:
-  - `ADMIN`:
-    - Full access including Banking (Chama) and Audit Logs.
-  - `MANAGER`:
-    - Dashboard, Inventory, CRM, POS, Reporting (no Chama/Audit).
-  - `CASHIER`:
-    - POS and Inventory Lookup only.
+- Projects / job costing:
+  - Project model with status (OPEN, COMPLETED, CANCELLED).
+  - Project-coded invoices and POs.
+  - Project summary (revenue, cost from POs, profit).
 
-## 4. M-Pesa STK Push Flow
+### Chama / Microfinance & HR
 
-Nuru’s M-Pesa integration uses the Daraja API:
+- Chama:
+  - Members, accounts, contributions, loans, guarantors.
+  - ChamaConstitution (interest, fines, max loan ratio).
+  - Member balances and group-level views.
 
-- `POST /api/payments/mpesa/stkpush` (authenticated)
-  - Body:
-    - `phoneNumber` (MSISDN in 2547XXXXXXXX format)
-    - `amount` (number)
-    - `invoiceId` (string)
-    - `accountReference` (optional, defaults to invoiceId)
-    - `description` (optional, defaults to `Invoice {invoiceId}`)
-  - Requires:
-    - `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`,
-      `MPESA_PASSKEY`, `MPESA_BASE_URL`, `MPESA_CALLBACK_URL`.
+- HR / Payroll (light):
+  - Employees (CASUAL, PERMANENT) with daily rate.
+  - “Pay Casuals” workflow to capture daily wages.
 
-- Callback:
-  - Route: `POST /api/payments/mpesa/callback`
-  - Safaricom calls this with STK push results.
-  - Nuru expects `tenantId` and `invoiceId` as query parameters
-    (automatically added to `MPESA_CALLBACK_URL` when initiating STK push).
-  - On `ResultCode: 0` (success):
-    - Nuru marks the invoice as `Paid` for that tenant.
-    - Writes a SystemLog entry `INVOICE_PAID_MPESA`.
+### Integrations & UX
 
-If any M-Pesa env variables are missing, STK push initiation will fail with a clear error and no mock behavior is used.
+- Payments:
+  - M-Pesa STK Push (Daraja).
+  - Pesapal v3 (card/bank).
+  - Manual external payments (cheque, EFT).
 
-## 5. PWA / Offline Support
+- Messaging:
+  - WhatsApp Cloud API:
+    - Invoice summaries.
+    - Payment reminders.
 
-Vite is configured with `vite-plugin-pwa`:
+- UI:
+  - React + Vite + Tailwind.
+  - Role-aware sidebar:
+    - Admin / Manager / Cashier.
+  - Simple vs Full modes based on tenant features.
+  - PWA-capable (installable app; offline-aware routing for basics).
 
-- Manifest:
-  - `name`: `Nuru`
-  - `short_name`: `Nuru`
-  - `theme_color`: `#F9F9F8`
-  - `background_color`: `#F9F9F8`
-  - `display`: `standalone`
-  - Icons:
-    - `/icons/icon-192.png`
-    - `/icons/icon-512.png`
-    - `/icons/icon-512-maskable.png` (maskable)
+---
 
-You must provide these icon files under `frontend/public/icons` (or equivalent) for full PWA compliance.
+## Architecture
 
-- Caching strategy:
-  - Static assets are cached by Workbox.
-  - API calls to paths starting with `/api/` use a **Network First** strategy:
-    - Try network, fall back to cache when offline.
+- Backend:
+  - Node.js, Express, TypeScript.
+  - Prisma ORM on PostgreSQL.
+  - Multi-tenant Prisma client wrapper:
+    - Sets `app.current_tenant_id` per request for RLS.
+  - Domain modules:
+    - `auth`, `inventory`, `invoicing`, `accounting`, `procurement`, `manufacturing`,
+      `projects`, `chama`, `payroll`, `reporting`, `dashboard`, `system`, `tenant`.
+  - Health & observability:
+    - `/health` endpoint (DB connectivity).
+    - Optional Sentry integration (`SENTRY_DSN`).
+    - Health-check script (`backend/scripts/health-check.ts`).
+    - Backup script (`backend/scripts/backup-db.sh`).
 
-To enable installable PWA:
+- Frontend:
+  - React + Vite + TypeScript.
+  - Tailwind CSS.
+  - TanStack Query for data fetching/caching.
+  - Role-aware navigation and feature-aware sidebar.
+  - API client pointing to `VITE_API_URL` (defaults to `http://localhost:4000/api`).
 
-- Ensure the app is served over HTTPS (required by browsers for service workers, except on localhost).
-- Run `vite build` and serve the built assets.
+---
 
-## 6. Running Locally
+## Quickstart (Local Dev)
 
-1. Set backend env:
+### 1. Prerequisites
+
+- Node.js 18+ (20 recommended).
+- PostgreSQL (e.g. 14+).
+- Git (if cloning).
+- Optional:
+  - Redis (for caching).
+  - Sentry account (for error tracking).
+
+### 2. Clone the repo
 
 ```bash
-# .env in project root or backend env
-DATABASE_URL=postgresql://user:password@localhost:5432/nuru
-JWT_SECRET=your_long_random_secret
+git clone https://github.com/your-org/nuru.git
+cd nuru
+```
 
+(or extract the ZIP if you have it that way)
+
+### 3. Create the database
+
+Connect to Postgres and create a DB (example):
+
+```sql
+CREATE DATABASE nuru_dev;
+```
+
+Build a `DATABASE_URL` string, e.g.:
+
+```text
+postgresql://username:password@localhost:5432/nuru_dev
+```
+
+### 4. Backend setup
+
+```bash
+cd backend
+npm install
+```
+
+Create `backend/.env`:
+
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/nuru_dev
+JWT_SECRET=change_me_to_a_long_random_string
+
+# Optional (for integrations)
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
-
-WHATSAPP_ACCESS_TOKEN=your_whatsapp_cloud_api_token
-WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
-
+WHATSAPP_ACCESS_TOKEN=...
+WHATSAPP_PHONE_NUMBER_ID=...
 MPESA_CONSUMER_KEY=...
 MPESA_CONSUMER_SECRET=...
 MPESA_SHORTCODE=...
 MPESA_PASSKEY=...
 MPESA_BASE_URL=https://sandbox.safaricom.co.ke
 MPESA_CALLBACK_URL=https://your-public-host/api/payments/mpesa/callback
-
-# Optional: lock CORS to a specific frontend origin
 FRONTEND_ORIGIN=http://localhost:5173
+SENTRY_DSN= # optional
 ```
 
-2. Set frontend env:
+Run migrations:
 
 ```bash
-# frontend/.env.local
+npx prisma migrate dev
+```
+
+(Optional) Seed demo data:
+
+```bash
+npm run seed
+```
+
+Start the backend:
+
+```bash
+npm run dev
+# listens on http://localhost:4000
+```
+
+### 5. Frontend setup
+
+```bash
+cd ../frontend
+npm install
+```
+
+Create `frontend/.env.local` (optional; the default works for localhost):
+
+```env
 VITE_API_URL=http://localhost:4000/api
 VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
 ```
 
-3. Install dependencies and run:
+Start the frontend:
 
-- Backend:
-  - `cd backend`
-  - `npm install` (or `pnpm install`)
-  - Run Prisma migrations: `npx prisma migrate dev`.
-  - Seed the database with demo data:
-    - `npx ts-node prisma/seed.ts`
-  - Start server: `npm run dev` or `npm start`.
-
-- Frontend:
-  - `cd frontend`
-  - `npm install`
-  - `npm run dev` (for development) or `npm run build` then `npm run preview` (for production preview).
-
-## 7. First Run Guide
-
-### 7.1 Default credentials
-
-The seed script creates a default admin user for immediate login:
-
-- Email: `admin@nuru.app`
-- Password: `password123`
-- Tenant: the \"Nuru Hardware (SME)\" tenant
-
-It also creates per-tenant users with the same password:
-
-- `admin+<tenantId>@nuru.app`
-- `manager+<tenantId>@nuru.app`
-- `cashier+<tenantId>@nuru.app`
-
-All of these use the password `password123`.
-
-Because tenant IDs are UUIDs, you need the tenantId to log in. You can fetch this from the database:
-
-```sql
-select id, name, code from "Tenant";
+```bash
+npm run dev
+# usually on http://localhost:5173
 ```
 
-Use the id for the tenant you want when logging in.
+### 6. Log in
 
-### 7.2 Using the seeded tenants
+If you ran the seed:
 
-The seed script creates three tenants:
+- Backend created:
+  - Tenants such as:
+    - Nuru Hardware (SME)
+    - Wamama Pamoja (Chama)
+    - Safari Haulage & Plant Hire
+    - St. Mary’s Academy
+    - GreenLeaf Agrovet
+    - Nairobi Furniture Works
+    - City Builders Ltd
+  - Users:
+    - `admin@nuru.app` (global admin on Nuru Hardware)
+    - `admin+<tenantId>@nuru.app`
+    - `manager+<tenantId>@nuru.app`
+    - `cashier+<tenantId>@nuru.app`
+  - All with password: `password123`.
 
-1. `Nuru Hardware (SME)` – retail
-   - Code: `NURU-HW`
-   - Has:
-     - 50+ hardware/FMCG products with realistic stock.
-     - 500+ invoices over the last 3 months.
-     - 50 customers with Kenyan names and KRA PINs.
-   - Good for demonstrating:
-     - Inventory and stock alerts.
-     - Sales and cash flow charts.
-     - AI Insights (churn risk, stockout, dead stock).
-     - Regulator View (VAT liability) based on seeded tax rates.
+To find tenant IDs:
 
-2. `Wamama Pamoja (Chama)` – savings group
-   - Code: `WAMAMA-PAMOJA`
-   - Has:
-     - 20 members.
-     - 6 months of contributions across ShareCapital, Deposits, MerryGoRound.
-     - 5 active loans.
-   - Good for demonstrating:
-     - Chama dashboard (pot size vs loans issued).
-     - Member statements (PDF via Reporting).
+```sql
+SELECT id, name, code FROM "Tenant";
+```
 
-3. `Safari Haulage & Plant Hire` – fleet/service business
-   - Code: `SAFARI-FLEET`
-   - Models a transport and plant hire business.
-   - Inventory (service assets):
-     - `Isuzu FRR (6-Ton) – Lorry Hire` @ ~KES 15,000/day.
-     - `Caterpillar Backhoe – Plant Hire` @ ~KES 35,000/day.
-     - `Toyota Fielder (Uber) – Taxi` @ ~KES 2,500/day.
-     - Units of Measure: `Day` and `Trip`.
-     - Stock is seeded with a very high quantity to represent capacity (\"time\" as inventory).
-   - Customers:
-     - `Mota Construction Ltd` (hires trucks).
-     - `John Kamau (Driver)` (remits daily taxi money).
-   - Transactions:
-     - ~20 invoices over the last ~60 days (e.g., multi-day lorry hires).
-     - Some invoices marked `Paid` with associated `Transaction` entries labelled as M-Pesa remittances.
-   - Chama:
-     - Linked to a Chama constitution and seeded with members/accounts via the same chama seeding logic.
-   - Good for demonstrating:
-     - How Nuru handles a service/fleet vertical (time-based billing).
-     - Cash flow from hire services.
-     - VAT liability on service invoices.
+Then:
 
-### 7.3 Logging in for the first time
+- Open http://localhost:5173/login.
+- Use:
+  - Email: `admin@nuru.app`
+  - Password: `password123`
+  - Tenant ID: the `id` of `Nuru Hardware (SME)`.
 
-1. Start backend and frontend as above.
-2. Navigate to `http://localhost:5173/login`.
-3. Use:
+---
 
-   - Email: `admin@nuru.app`
-   - Password: `password123`
+## Environment Variables (Quick Reference)
 
-4. Tenant ID:
-   - Copy the `id` for the `Nuru Hardware (SME)` tenant from your database and paste it into the Tenant ID field on the login form.
+Backend (backend/.env):
 
-Once logged in, you can:
+- Required:
+  - `DATABASE_URL` – Postgres connection string.
+  - `JWT_SECRET` – long random secret for JWT signing.
+  - `FRONTEND_ORIGIN` – CORS origin (e.g. `http://localhost:5173`).
 
-- Go to `/dashboard`:
-  - See AI Insights, Regulator View (VAT), Cash Flow, Chama Trust, and Stock Alerts.
-  - Open the \"Customize\" control to show/hide dashboard cards.
-- Click the \"Regulator View – eTIMS Tax Liability\" card:
-  - Navigates to `/reporting/tax-details`.
-  - Shows a detailed table of invoices contributing to VAT for the current period.
-  - Use \"Download KRA CSV\" to export a CSV built from the same tax logic as the dashboard.
+- Optional but recommended:
+  - `GOOGLE_CLIENT_ID` – for Google login.
+  - `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` – WhatsApp Cloud API.
+  - `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`,
+    `MPESA_PASSKEY`, `MPESA_BASE_URL`, `MPESA_CALLBACK_URL` – M-Pesa STK.
+  - `PESAPAL_CONSUMER_KEY`, `PESAPAL_CONSUMER_SECRET`, `PESAPAL_BASE_URL`,
+    `PESAPAL_NOTIFICATION_ID`, `PESAPAL_CURRENCY` – Pesapal card/bank.
+  - `SENTRY_DSN` – Sentry project DSN for error monitoring.
 
-To explore the fleet tenant:
+Frontend (frontend/.env.local):
 
-1. Look up the `id` for the `Safari Haulage & Plant Hire` tenant.
-2. Log in using:
-   - Email: `admin+<safariTenantId>@nuru.app`
-   - Password: `password123`
-   - Tenant ID: `<safariTenantId>`
-3. Explore:
-   - Invoices and cash flow specific to fleet/service income.
-   - Chama features linked to the fleet-owned group.
+- `VITE_API_URL` – defaults to `http://localhost:4000/api` if not set.
+- `VITE_GOOGLE_CLIENT_ID` – must match backend’s `GOOGLE_CLIENT_ID` for Google login.
 
-## 8. Production Notes
+For full details on M-Pesa, WhatsApp, and PWA configuration, see `MANUAL.md` / `Nuru.md` if present.
 
-- Always use strong, unique values for:
-  - `JWT_SECRET`
-  - Database credentials
-  - M-Pesa keys
-  - WhatsApp and Google OAuth credentials
+---
 
-- Use HTTPS in production and keep environment variables out of source control.
+## Seed Data & Demo Tenants
 
-- Review the audit logs (`/settings/audit-log`) after enabling all integrations to verify that sensitive operations are properly recorded.
+The seed script (`backend/prisma/seed.ts`) creates:
+
+- Nuru Hardware (SME):
+  - Retail hardware/FMCG, 12 months of invoices, customers, stock, debtors.
+- Wamama Pamoja (Chama):
+  - 20 members, 6 months of contributions and loans.
+- Safari Haulage & Plant Hire:
+  - Fleet/plant hire services, invoices, payments, chama link.
+- St. Mary’s Academy:
+  - School fees across terms, students as customers.
+- GreenLeaf Agrovet:
+  - Agrovet stock with batches and expiries.
+- Nairobi Furniture Works:
+  - Manufacturing (BOM & production orders) for tables.
+- City Builders Ltd:
+  - Construction projects with project-coded POs and invoices.
+
+These give you realistic data to explore dashboards, tax reports, GL, projects, chama, and more.
+
+---
+
+## Production Checklist
+
+When you’re ready to use Nuru beyond a local demo, consider:
+
+- Database:
+  - Managed Postgres with automated backups.
+  - Apply migrations via `prisma migrate deploy`.
+- Backups:
+  - Use `backend/scripts/backup-db.sh` (or your own) on a schedule.
+  - Test restore at least once.
+- Monitoring & logs:
+  - Enable Sentry (`SENTRY_DSN`) for error tracking.
+  - Ship logs to a central place (ELK, CloudWatch, etc.).
+- Security:
+  - Use HTTPS everywhere.
+  - Use strong, unique secrets for JWT, DB, M-Pesa, WhatsApp, Google, Pesapal.
+- Access control:
+  - Configure role visibility and Simple vs Full mode per tenant (via tenant features).
+  - Review Audit Log (`/settings/audit-log`) regularly.
+
+Nuru is designed to be understandable and flexible. If something feels heavy or missing for your use case, adjust the modules and UI rather than trying to turn it into a copy of a much larger ERP. The codebase is structured to make that kind of change manageable.
