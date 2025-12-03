@@ -57,6 +57,7 @@ model Tenant {
   productionOrders     ProductionOrder[]
   assets               Asset[]
   depreciationRuns     DepreciationRun[]
+  idempotencyKeys      IdempotencyKey[]
 }
 
 
@@ -667,9 +668,7 @@ model GLJournalLine {
   @@index([tenantId, journalEntryId])
 }
 
-/**
- * Fixed Asset registry entry. Depreciation is posted via GLJournalEntry.
- */
+// Fixed Asset registry entry. Depreciation is posted via GLJournalEntry.
 model Asset {
   id                    String   @id @default(uuid()) @db.Uuid
   tenantId              String   @db.Uuid
@@ -688,9 +687,7 @@ model Asset {
   @@index([tenantId])
 }
 
-/**
- * Tracks when depreciation was last run for a tenant/month.
- */
+// Tracks when depreciation was last run for a tenant/month.
 model DepreciationRun {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @db.Uuid
@@ -817,4 +814,22 @@ model PasswordResetToken {
 
   @@index([tenantId])
   @@index([userId])
+}
+
+model IdempotencyKey {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid
+  key         String
+  method      String
+  path        String
+  requestHash String?
+  response    Json?
+  statusCode  Int?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@unique([key, tenantId])
 }

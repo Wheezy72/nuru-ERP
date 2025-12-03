@@ -5,6 +5,7 @@ import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 import { LoyaltyService } from '../../customers/core/LoyaltyService';
 import { AccountingService } from '../../accounting/core/AccountingService';
 import { computeTaxBreakdown } from './taxMath';
+import { computeLineTotal, money, roundCurrency } from '../../../shared/finance/money';
 
 export class InvoiceService {
   private tenantId: string;
@@ -82,9 +83,12 @@ export class InvoiceService {
 
     return prisma.$transaction(async (tx) => {
       const subtotal = input.items.reduce(
-        (acc, item) => acc.add(item.quantity.mul(item.unitPrice)),
-        new Prisma.Decimal(0)
+        (acc, item) =>
+          acc.add(computeLineTotal(item.quantity, item.unitPrice)),
+        money(0),
       );
+
+      const roundedTotal = roundCurrency(subtotal);
 
       const invoiceNo = `INV-${Date.now()}`;
 
@@ -96,7 +100,7 @@ export class InvoiceService {
           status: 'Draft',
           issueDate: input.issueDate,
           dueDate: input.dueDate,
-          totalAmount: subtotal,
+          totalAmount: roundedTotal,
           items: {
             create: input.items.map((item) => ({
               tenantId: this.tenantId,
@@ -104,7 +108,7 @@ export class InvoiceService {
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               uomId: item.uomId,
-              lineTotal: item.quantity.mul(item.unitPrice),
+              lineTotal: computeLineTotal(item.quantity, item.unitPrice),
               hsCode: item.hsCode,
               taxRate: item.taxRate,
             })),
@@ -300,18 +304,19 @@ export class InvoiceService {
       return { created: 0 };
     }
 
-    const unitPriceDecimal = new Prisma.Decimal(input.unitPrice);
-    const qty = new Prisma.Decimal(1);
+    const unitPriceDecimal = money(input.unitPrice);
+    const qty = money(1);
 
     await prisma.$transaction(async (tx) => {
       for (const customer of customers) {
         const invoiceNo = `SCH-${Date.now()}-${Math.floor(
-          Math.random() * 10000
+          Math.random() * 10000,
         )
           .toString()
           .padStart(4, '0')}`;
 
-        const lineTotal = qty.mul(unitPriceDecimal);
+        const lineTotal = computeLineTotal(qty, unitPriceDecimal);
+        const totalAmount = roundCurrency(lineTotal);
 
         await tx.invoice.create({
           data: {
@@ -320,7 +325,7 @@ export class InvoiceService {
             invoiceNo,
             status: 'Draft',
             issueDate: input.issueDate,
-            totalAmount: lineTotal,
+            totalAmount,
             items: {
               create: [
                 {

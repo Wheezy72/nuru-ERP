@@ -22,6 +22,7 @@ import manufacturingRoutes from './modules/manufacturing/http/manufacturing.rout
 import projectRoutes from './modules/projects/http/project.routes';
 import accountingRoutes from './modules/accounting/http/accounting.routes';
 import { prisma as basePrisma } from './shared/prisma/client';
+import { idempotencyMiddleware } from './shared/middleware/idempotency';
 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
@@ -54,6 +55,9 @@ if (process.env.SENTRY_DSN) {
 
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Idempotency handling for write operations (POST/PUT/PATCH) using Idempotency-Key header.
+app.use(idempotencyMiddleware);
 
 app.get('/health', async (_req, res) => {
   try {
