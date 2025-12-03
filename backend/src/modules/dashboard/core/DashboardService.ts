@@ -137,6 +137,7 @@ export class DashboardService {
     const invoicesAgg = await prisma.invoice.aggregate({
       where: {
         tenantId: this.tenantId,
+        isTraining: false,
         status: { in: ['Posted', 'Partial', 'Paid'] },
         issueDate: {
           gte: start,
@@ -417,6 +418,7 @@ export class DashboardService {
         tenantId: this.tenantId,
         invoice: {
           tenantId: this.tenantId,
+          isTraining: false,
           status: { in: ['Posted', 'Partial', 'Paid'] },
           issueDate: {
             gte: start,
@@ -548,6 +550,7 @@ export class DashboardService {
         invoices: {
           where: {
             tenantId: this.tenantId,
+            isTraining: false,
             status: { in: ['Posted', 'Partial', 'Paid'] },
           },
           select: {
@@ -594,6 +597,7 @@ export class DashboardService {
         tenantId: this.tenantId,
         invoice: {
           status: { in: ['Posted', 'Partial', 'Paid'] },
+          isTraining: false,
           issueDate: { gte: historyStart, lte: now },
         },
       },

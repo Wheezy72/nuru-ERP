@@ -18,6 +18,7 @@ export class ReportingService {
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: this.tenantId,
+        isTraining: false,
         status: { in: ['Posted', 'Partial', 'Paid'] },
         issueDate: {
           gte: range.startDate,
@@ -95,8 +96,8 @@ export class ReportingService {
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: this.tenantId,
-        status: { in: ['Posted', 'Paid'] },
-        issueDate: {
+        isTraining: false,
+        status: { in     issueDate: {
           gte: range.startDate,
           lt: range.endDate,
         },

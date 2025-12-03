@@ -29,3 +29,8 @@ body {
   background-color: var(--nuru-bg);
   color: var(--nuru-fg);
 }
+
+/* Training mode: subtle amber tint for easy recognition in busy shops */
+:root[data-training='true'] body {
+  background-color: #fff7ed;
+}

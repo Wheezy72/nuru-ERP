@@ -13,6 +13,7 @@ type InvoiceWhatsAppPayload = {
   totalAmount: string;
   customerName: string | null;
   items: InvoiceWhatsAppItem[];
+  isTraining?: boolean;
 };
 
 export class WhatsAppService {
@@ -79,7 +80,7 @@ export class WhatsAppService {
       .slice(0, 3)
       .map(
         (item) =>
-          `- ${item.productName} x ${item.quantity} @ ${item.unitPrice} = ${item.lineTotal}`
+          `- ${item.productName} x ${item.quantity} @ ${item.unitPrice} = ${item.lineTotal}`,
       )
       .join('\n');
 
@@ -88,7 +89,12 @@ export class WhatsAppService {
         ? `\n+ ${invoice.items.length - 3} more item(s)...`
         : '';
 
+    const header = invoice.isTraining
+      ? ['TRAINING MODE – DEMO RECEIPT (NO REAL SALE)', '']
+      : [];
+
     const body = [
+      ...header,
       `Hi ${invoice.customerName || 'Customer'},`,
       '',
       `Your invoice ${invoice.invoiceNo} dated ${issueDateStr} is ready.`,

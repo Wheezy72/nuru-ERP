@@ -70,6 +70,7 @@ export class InvoiceService {
     customerId: string;
     issueDate: Date;
     dueDate?: Date;
+    isTraining?: boolean;
     items: {
       productId: string;
       quantity: Prisma.Decimal;
@@ -148,6 +149,54 @@ export class InvoiceService {
     }
     if (invoice.status !== 'Draft') {
       throw new Error('Only draft invoices can be posted');
+    }
+
+    // Training invoices: mark as posted but do not touch stock or GL.
+    if (invoice.isTraining) {
+      const updatedTraining = await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { status: 'Posted' },
+      });
+
+      await prisma.systemLog.create({
+        data: {
+          tenantId: this.tenantId,
+          userId: userId ?? null,
+          action: 'INVOICE_POSTED_TRAINING',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          metadata: {
+            locationId,
+            totalAmount: invoice.totalAmount,
+          },
+        },
+      });
+
+      // Optional: send a clearly marked training receipt via WhatsApp.
+      try {
+        const customer = invoice.customer;
+        if (customer?.phone) {
+          const whatsappService = new WhatsAppService(this.tenantId);
+          await whatsappService.sendInvoice(customer.phone, {
+            invoiceNo: invoice.invoiceNo,
+            issueDate: invoice.issueDate,
+            totalAmount: invoice.totalAmount.toString(),
+            customerName: customer.name,
+            items: invoice.items.map((item) => ({
+              productName: item.product?.name ?? 'Item',
+              quantity: item.quantity.toString(),
+              unitPrice: item.unitPrice.toString(),
+              lineTotal: item.lineTotal.toString(),
+            })),
+            isTraining: true,
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send training invoice WhatsApp notification', err);
+      }
+
+      return updatedTraining;
     }
 
     // Adjust stock for each invoice item before marking as posted

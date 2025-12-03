@@ -61,7 +61,18 @@ router.post('/', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
     const service = new InvoiceService(tenantId);
-    const invoice = await service.createInvoice(req.body);
+
+    const trainingHeader = (req.headers['x-training-mode'] ||
+      req.headers['x_training_mode'] ||
+      '') as string;
+    const isTraining =
+      typeof trainingHeader === 'string' &&
+      ['1', 'true', 'yes'].includes(trainingHeader.toLowerCase());
+
+    const invoice = await service.createInvoice({
+      ...req.body,
+      isTraining,
+    });
     res.status(201).json(invoice);
   } catch (err) {
     next(err);

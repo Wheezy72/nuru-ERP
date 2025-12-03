@@ -214,6 +214,7 @@ model Invoice {
   issueDate    DateTime
   dueDate      DateTime?
   totalAmount  Decimal       @default(0)
+  isTraining   Boolean       @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -325,6 +326,7 @@ model Loan {
   issuedAt      DateTime
   dueDate       DateTime?
   status        String           // "Pending", "Active", "Closed", "Defaulted"
+  isTraining    Boolean          @default(false)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 

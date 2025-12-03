@@ -148,6 +148,11 @@ export class AccountingService {
       throw new Error('Invoice not found for GL posting');
     }
 
+    if (invoice.isTraining) {
+      // Training invoices do not hit the general ledger.
+      return null;
+    }
+
     const existing = await prisma.gLJournalEntry.findFirst({
       where: {
         tenantId: this.tenantId,
@@ -221,6 +226,10 @@ export class AccountingService {
     if (!invoice) {
       throw new Error('Invoice not found for GL cash receipt');
     }
+
+    if (invoice.isTraining) {
+      // Training invoices do not hit the general ledger.
+      return null }
 
     const totalAmount = invoice.totalAmount as unknown as Prisma.Decimal;
     if (totalAmount.lte(0)) {
