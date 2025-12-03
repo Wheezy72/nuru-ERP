@@ -24,6 +24,22 @@ export class AccountingService {
     return createTenantPrismaClient(this.tenantId);
   }
 
+  private ensureBalanced(lines: { debit: Prisma.Decimal; credit: Prisma.Decimal }[]) {
+    const totalDebit = lines.reduce(
+      (acc, line) => acc.add(line.debit),
+      new Prisma.Decimal(0),
+    );
+    const totalCredit = lines.reduce(
+      (acc, line) => acc.add(line.credit),
+      new Prisma.Decimal(0),
+    );
+    if (!totalDebit.eq(totalCredit)) {
+      throw new Error(
+        `Unbalanced journal entry: debits ${totalDebit.toString()} vs credits ${totalCredit.toString()}`,
+      );
+    }
+  }
+
   /**
    * Ensure a minimal chart of accounts per tenant.
    * This is also invoked from seed.ts to create a standard Kenyan-style CoA.
@@ -151,6 +167,28 @@ export class AccountingService {
 
     const accounts = await this.ensureDefaultAccounts(prisma);
 
+    const lines = [
+      {
+        tenantId: this.tenantId,
+        accountId: accounts.receivables.id,
+        debit: totalAmount,
+        credit: new Prisma.Decimal(0),
+      },
+      {
+        tenantId: this.tenantId,
+        accountId: accounts.sales.id,
+        debit: new Prisma.Decimal(0),
+        credit: totalAmount,
+      },
+    ];
+
+    this.ensureBalanced(
+      lines.map((l) => ({
+        debit: l.debit as unknown as Prisma.Decimal,
+        credit: l.credit as unknown as Prisma.Decimal,
+      })),
+    );
+
     const entry = await prisma.gLJournalEntry.create({
       data: {
         tenantId: this.tenantId,
@@ -158,20 +196,7 @@ export class AccountingService {
         description: `Invoice ${invoice.invoiceNo} posted`,
         invoiceId: invoice.id,
         lines: {
-          create: [
-            {
-              tenantId: this.tenantId,
-              accountId: accounts.receivables.id,
-              debit: totalAmount,
-              credit: new Prisma.Decimal(0),
-            },
-            {
-              tenantId: this.tenantId,
-              accountId: accounts.sales.id,
-              debit: new Prisma.Decimal(0),
-              credit: totalAmount,
-            },
-          ],
+          create: lines,
         },
       },
     });
@@ -217,6 +242,28 @@ export class AccountingService {
 
     const accounts = await this.ensureDefaultAccounts(prisma);
 
+    const lines = [
+      {
+        tenantId: this.tenantId,
+        accountId: accounts.cash.id,
+        debit: totalAmount,
+        credit: new Prisma.Decimal(0),
+      },
+      {
+        tenantId: this.tenantId,
+        accountId: accounts.receivables.id,
+        debit: new Prisma.Decimal(0),
+        credit: totalAmount,
+      },
+    ];
+
+    this.ensureBalanced(
+      lines.map((l) => ({
+        debit: l.debit as unknown as Prisma.Decimal,
+        credit: l.credit as unknown as Prisma.Decimal,
+      })),
+    );
+
     const entry = await prisma.gLJournalEntry.create({
       data: {
         tenantId: this.tenantId,
@@ -224,20 +271,7 @@ export class AccountingService {
         description: `Invoice ${invoice.invoiceNo} paid`,
         invoiceId: invoice.id,
         lines: {
-          create: [
-            {
-              tenantId: this.tenantId,
-              accountId: accounts.cash.id,
-              debit: totalAmount,
-              credit: new Prisma.Decimal(0),
-            },
-            {
-              tenantId: this.tenantId,
-              accountId: accounts.receivables.id,
-              debit: new Prisma.Decimal(0),
-              credit: totalAmount,
-            },
-          ],
+          create: lines,
         },
       },
     });
@@ -293,6 +327,28 @@ export class AccountingService {
 
     const accounts = await this.ensureDefaultAccounts(prisma);
 
+    const lines = [
+      {
+        tenantId: this.tenantId,
+        accountId: accounts.cogs.id,
+        debit: total,
+        credit: new Prisma.Decimal(0),
+      },
+      {
+        tenantId: this.tenantId,
+        accountId: accounts.cash.id,
+        debit: new Prisma.Decimal(0),
+        credit: total,
+      },
+    ];
+
+    this.ensureBalanced(
+      lines.map((l) => ({
+        debit: l.debit as unknown as Prisma.Decimal,
+        credit: l.credit as unknown as Prisma.Decimal,
+      })),
+    );
+
     const entry = await prisma.gLJournalEntry.create({
       data: {
         tenantId: this.tenantId,
@@ -300,20 +356,7 @@ export class AccountingService {
         description: `Purchase order ${po.id} received`,
         purchaseOrderId: po.id,
         lines: {
-          create: [
-            {
-              tenantId: this.tenantId,
-              accountId: accounts.cogs.id,
-              debit: total,
-              credit: new Prisma.Decimal(0),
-            },
-            {
-              tenantId: this.tenantId,
-              accountId: accounts.cash.id,
-              debit: new Prisma.Decimal(0),
-              credit: total,
-            },
-          ],
+          create: lines,
         },
       },
     });
