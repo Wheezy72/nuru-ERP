@@ -13,6 +13,16 @@ type InvoiceWhatsAppPayload = {
   totalAmount: string;
   customerName: string | null;
   items: InvoiceWhatsAppItem[];
+  isTraining?: boolean;
+};
+
+type PaymentReceiptPayload = {
+  invoiceNo: string;
+  amountPaid: string;
+  totalAmount: string;
+  balance: string;
+  method: 'MPESA' | 'CARD' | 'MANUAL';
+  customerName: string | null;
 };
 
 export class WhatsAppService {
@@ -20,6 +30,34 @@ export class WhatsAppService {
 
   constructor(tenantId: string) {
     this.tenantId = tenantId;
+  }
+
+  private async isPaymentReceiptsEnabled() {
+    const prisma = createTenantPrismaClient(this.tenantId);
+    const tenant = await prisma.tenant.findFirst({
+      where: { id: this.tenantId },
+      select: { features: true },
+    });
+
+    const features = (tenant?.features || {}) as any;
+    const whatsapp = features.whatsapp || {};
+    if (typeof whatsapp.enablePaymentReceipts === 'boolean') {
+      return whatsapp.enablePaymentReceipts;
+    }
+    // Default: on
+    return true;
+  }
+
+  private async isRiskAlertsEnabled() {
+    const prisma = createTenantPrismaClient(this.tenantId);
+    const tenant = await prisma.tenant.findFirst({
+      where: { id: this.tenantId },
+      select: { features: true },
+    });
+
+    const features = (tenant?.features || {}) as any;
+    const whatsapp = features.whatsapp || {};
+    return Boolean(whatsapp.enableRiskAlerts);
   }
 
   private ensureEnv(key: string) {
@@ -79,7 +117,7 @@ export class WhatsAppService {
       .slice(0, 3)
       .map(
         (item) =>
-          `- ${item.productName} x ${item.quantity} @ ${item.unitPrice} = ${item.lineTotal}`
+          `- ${item.productName} x ${item.quantity} @ ${item.unitPrice} = ${item.lineTotal}`,
       )
       .join('\n');
 
@@ -88,7 +126,12 @@ export class WhatsAppService {
         ? `\n+ ${invoice.items.length - 3} more item(s)...`
         : '';
 
+    const header = invoice.isTraining
+      ? ['TRAINING MODE – DEMO RECEIPT (NO REAL SALE)', '']
+      : [];
+
     const body = [
+      ...header,
       `Hi ${invoice.customerName || 'Customer'},`,
       '',
       `Your invoice ${invoice.invoiceNo} dated ${issueDateStr} is ready.`,
@@ -108,11 +151,46 @@ export class WhatsAppService {
     await this.sendText(toPhone, body);
   }
 
-  async sendConstitutionUpdate(toPhone: string, payload: {
-    interestRate: string;
-    lateFineAmount: string;
-    maxLoanRatio: string;
-  }) {
+  /**
+   * Send a simple KES payment receipt with amount and new balance.
+   * Respects per-tenant feature flag whatsapp.enablePaymentReceipts.
+   */
+  async sendPaymentReceipt(toPhone: string, payload: PaymentReceiptPayload) {
+    if (!toPhone) {
+      return;
+    }
+
+    const enabled = await this.isPaymentReceiptsEnabled();
+    if (!enabled) {
+      return;
+    }
+
+    const body = [
+      `Hi ${payload.customerName || 'Customer'},`,
+      '',
+      `We have received your payment of ${payload.amountPaid} for Invoice ${payload.invoiceNo}.`,
+      `Method: ${payload.method}`,
+      `Total invoice amount: ${payload.totalAmount}`,
+      `Balance now: ${payload.balance}`,
+      '',
+      'Thank you.',
+      '',
+      `- Nuru (tenant ${this.tenantId})`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    await this.sendText(toPhone, body);
+  }
+
+  async sendConstitutionUpdate(
+    toPhone: string,
+    payload: {
+      interestRate: string;
+      lateFineAmount: string;
+      maxLoanRatio: string;
+    },
+  ) {
     const body = [
       'Chama constitution updated:',
       '',
@@ -128,5 +206,40 @@ export class WhatsAppService {
       .join('\n');
 
     await this.sendText(toPhone, body);
+  }
+
+  /**
+   * One-line alert for internal admins when risk score drops.
+   * You invoke this from the risk analysis layer; it respects enableRiskAlerts flag.
+   */
+  async sendRiskAlertToAdminPhones(
+    phones: string[],
+    payload: { nuruScore: number; windowDays: number },
+  ) {
+    const enabled = await this.isRiskAlertsEnabled();
+    if (!enabled) {
+      return;
+    }
+
+    if (!phones.length) {
+      return;
+    }
+
+    const body = [
+      `Nuru risk alert: score is ${payload.nuruScore}/100 over the last ${payload.windowDays}d.`,
+      'Check manual payments, stock variances, and coupons for anomalies.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    for (const phone of phones) {
+      if (!phone) continue;
+      try {
+        await this.sendText(phone, body);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send risk alert WhatsApp message', err);
+      }
+    }
   }
 }

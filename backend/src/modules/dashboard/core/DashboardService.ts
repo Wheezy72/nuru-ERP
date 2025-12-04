@@ -1,6 +1,8 @@
 import { Prisma, TaxRate } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { getRedisClient } from '../../../shared/cache/redisClient';
+import { computeTaxBreakdown } from '../../invoicing/core/taxMath';
+import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 
 type DateRange = {
   startDate?: Date;
@@ -57,6 +59,7 @@ export class DashboardService {
       insights,
       taxLiability,
       debtors,
+      risk,
     ] = await Promise.all([
       this.getMetrics(prisma, range),
       this.getCashFlow(prisma, range),
@@ -65,6 +68,7 @@ export class DashboardService {
       this.getSmartInsights(prisma),
       this.getTaxLiability(prisma, range),
       this.getDebtors(prisma),
+      this.getRiskSignals(prisma),
     ]);
 
     const summary = {
@@ -75,11 +79,18 @@ export class DashboardService {
       insights,
       taxLiability,
       debtors,
+      risk,
     };
 
     if (redis) {
       await redis.setex(cacheKey, 60 * 5, JSON.stringify(summary));
     }
+
+    // Optionally send a short WhatsApp risk alert to admins if the score dropped.
+    this.maybeSendRiskAlert(risk).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send risk alert', err);
+    });
 
     return summary;
   }
@@ -136,6 +147,7 @@ export class DashboardService {
     const invoicesAgg = await prisma.invoice.aggregate({
       where: {
         tenantId: this.tenantId,
+        isTraining: false,
         status: { in: ['Posted', 'Partial', 'Paid'] },
         issueDate: {
           gte: start,
@@ -416,6 +428,7 @@ export class DashboardService {
         tenantId: this.tenantId,
         invoice: {
           tenantId: this.tenantId,
+          isTraining: false,
           status: { in: ['Posted', 'Partial', 'Paid'] },
           issueDate: {
             gte: start,
@@ -429,58 +442,12 @@ export class DashboardService {
       },
     });
 
-    const breakdown = {
-      vat16: {
-        taxable: new Prisma.Decimal(0),
-        tax: new Prisma.Decimal(0),
-      },
-      vat8: {
-        taxable: new Prisma.Decimal(0),
-        tax: new Prisma.Decimal(0),
-      },
-      exempt: {
-        amount: new Prisma.Decimal(0),
-      },
-      zeroRated: {
-        amount: new Prisma.Decimal(0),
-      },
-      totalTax: new Prisma.Decimal(0),
-    };
-
-    const rateFor = (rate: TaxRate) => {
-      switch (rate) {
-        case 'VAT_16':
-          return new Prisma.Decimal(0.16);
-        case 'VAT_8':
-          return new Prisma.Decimal(0.08);
-        case 'EXEMPT':
-        case 'ZERO':
-        default:
-          return new Prisma.Decimal(0);
-      }
-    };
-
-    for (const item of items) {
-      const amount = item.lineTotal as unknown as Prisma.Decimal;
-      const rate = item.taxRate as TaxRate;
-      const r = rateFor(rate);
-      const tax = amount.mul(r);
-
-      if (rate === 'VAT_16') {
-        breakdown.vat16.taxable = breakdown.vat16.taxable.add(amount);
-        breakdown.vat16.tax = breakdown.vat16.tax.add(tax);
-      } else if (rate === 'VAT_8') {
-        breakdown.vat8.taxable = breakdown.vat8.taxable.add(amount);
-        breakdown.vat8.tax = breakdown.vat8.tax.add(tax);
-      } else if (rate === 'EXEMPT') {
-        breakdown.exempt.amount = breakdown.exempt.amount.add(amount);
-      } else if (rate === 'ZERO') {
-        breakdown.zeroRated.amount =
-          breakdown.zeroRated.amount.add(amount);
-      }
-
-      breakdown.totalTax = breakdown.totalTax.add(tax);
-    }
+    const breakdown = computeTaxBreakdown(
+      items.map((item) => ({
+        lineTotal: item.lineTotal as unknown as Prisma.Decimal,
+        taxRate: item.taxRate as TaxRate,
+      })),
+    );
 
     return {
       totalTax: Number(breakdown.totalTax.toString()),
@@ -593,6 +560,7 @@ export class DashboardService {
         invoices: {
           where: {
             tenantId: this.tenantId,
+            isTraining: false,
             status: { in: ['Posted', 'Partial', 'Paid'] },
           },
           select: {
@@ -639,6 +607,7 @@ export class DashboardService {
         tenantId: this.tenantId,
         invoice: {
           status: { in: ['Posted', 'Partial', 'Paid'] },
+          isTraining: false,
           issueDate: { gte: historyStart, lte: now },
         },
       },
@@ -815,6 +784,7 @@ export class DashboardService {
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: this.tenantId,
+        isTraining: false,
         status: {
           not: 'Draft',
         },
@@ -886,5 +856,140 @@ export class DashboardService {
     debtors.sort((a, b) => b.balanceDue - a.balanceDue);
 
     return debtors.slice(0, 10);
+  }
+
+  private async getRiskSignals(prisma: ReturnType<typeof this['prisma']>) {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 30,
+      0,
+      0,
+      0,
+      0,
+    );
+
+    const [
+      manualPayments,
+      stockVariances,
+      voidLikeDiscounts,
+      trainingInvoices,
+      shiftVariances,
+    ] = await Promise.all([
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'INVOICE_PAID_MANUAL',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'STOCKTAKE_VARIANCE',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'COUPON_APPLIED',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.invoice.count({
+        where: {
+          tenantId: this.tenantId,
+          isTraining: true,
+          issueDate: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'SHIFT_VARIANCE',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+    ]);
+
+    const anomalyFactors: { label: string; weight: number; count: number }[] = [
+      { label: 'manualPayments', weight: 2, count: manualPayments },
+      { label: 'stockVariances', weight: 3, count: stockVariances },
+      { label: 'voidLikeDiscounts', weight: 1, count: voidLikeDiscounts },
+      { label: 'trainingInvoices', weight: 1, count: trainingInvoices },
+      { label: 'shiftVariances', weight: 3, count: shiftVariances },
+    ];
+
+    let rawScore = 0;
+    for (const f of anomalyFactors) {
+      rawScore += f.count * f.weight;
+    }
+
+    // Simple cap and invert so higher Nuru Score = lower risk
+    const capped = Math.min(rawScore, 100);
+    const nuruScore = 100 - capped; // 0 (high risk) .. 100 (clean)
+
+    return {
+      nuruScore,
+      windowDays: 30,
+      manualPayments,
+      stockVariances,
+      voidLikeDiscounts,
+      trainingInvoices,
+      shiftVariances,
+    };
+  }
+
+  /**
+   * If risk alerts are enabled, send a short WhatsApp alert to all admin phones
+   * when the Nuru Score drops below a soft threshold.
+   */
+  private async maybeSendRiskAlert(risk: {
+    nuruScore: number;
+    windowDays: number;
+  }) {
+    // Only alert when score is clearly deteriorating
+    if (risk.nuruScore >= 70) {
+      return;
+    }
+
+    const prisma = this.prisma;
+
+    const admins = await prisma.user.findMany({
+      where: {
+        tenantId: this.tenantId,
+        role: 'ADMIN',
+        phone: { not: null },
+      },
+      select: {
+        phone: true,
+      },
+    });
+
+    const phones = admins
+      .map((u) => u.phone)
+      .filter((p): p is string => Boolean(p));
+
+    if (phones.length === 0) {
+      return;
+    }
+
+    const whatsapp = new WhatsAppService(this.tenantId);
+    await whatsapp.sendRiskAlertToAdminPhones(phones, {
+      nuruScore: risk.nuruScore,
+      windowDays: risk.windowDays,
+    });
   }
 }

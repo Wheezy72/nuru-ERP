@@ -73,6 +73,16 @@ type Debtor = {
   balanceDue: number;
 };
 
+type RiskSignals = {
+  nuruScore: number;
+  windowDays: number;
+  manualPayments: number;
+  stockVariances: number;
+  voidLikeDiscounts: number;
+  trainingInvoices: number;
+  shiftVariances?: number;
+};
+
 type DashboardSummary = {
   metrics: DashboardMetrics;
   cashFlow: CashFlow;
@@ -81,6 +91,7 @@ type DashboardSummary = {
   insights: Insight[];
   taxLiability: TaxLiability;
   debtors: Debtor[];
+  risk: RiskSignals;
 };
 
 function getRoleVisibility(features?: TenantFeatures): RoleVisibility {
@@ -318,7 +329,7 @@ export function DashboardPage() {
         )}
 
         {visibleCards.cash && roleVisibility.canViewDailyTotals !== false && (
-          <Card className="col-span-2 p-4 flex flex-col justify-between">
+          <Card className="col-span-1 p-4 flex flex-col justify-between">
             <div className="text-xs font-semibold uppercase text-muted-foreground">
               Cash at Hand
             </div>
@@ -335,6 +346,43 @@ export function DashboardPage() {
             </div>
           </Card>
         )}
+
+        <Card className="col-span-1 p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase text-muted-foreground">
+            <span>Nuru Score</span>
+            <span className="text-[0.65rem] text-muted-foreground">
+              {summary ? `${summary.risk.windowDays}d` : ''}
+            </span>
+          </div>
+          <div className="mt-2 flex items-end gap-3">
+            <div className="text-3xl font-semibold text-foreground">
+              {isLoading || !summary ? '—' : summary.risk.nuruScore}
+            </div>
+            <div className="flex flex-col text-[0.7rem] text-muted-foreground">
+              {summary && (
+                <>
+                  <span>
+                    Manual: {summary.risk.manualPayments.toLocaleString()}
+                  </span>
+                  <span>
+                    Stock var: {summary.risk.stockVariances.toLocaleString()}
+                  </span>
+                  <span>
+                    Shift var:{' '}
+                    {(summary.risk.shiftVariances ?? 0).toLocaleString()}
+                  </span>
+                  <span>
+                    Coupons: {summary.risk.voidLikeDiscounts.toLocaleString()}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            100 = very clean. Drops as manual overrides, stock/shift variances,
+            and heavy discounts increase.
+          </div>
+        </Card>
 
         {visibleCards.cashFlow && (
           <Card className="md:col-span-2 md:row-span-2 p-4 flex flex-col">

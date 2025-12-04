@@ -9,6 +9,9 @@ import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
 import { InvoiceDetailPage } from '@/pages/invoices/InvoiceDetailPage';
 import { MembersPage } from '@/pages/chama/MembersPage';
 import { AuditLogPage } from '@/pages/settings/AuditLogPage';
+import { CouponsPage } from '@/pages/settings/CouponsPage';
+import { ImportPage } from '@/pages/settings/ImportPage';
+import { MpesaReconcilePage } from '@/pages/banking/MpesaReconcilePage';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { PosPage } from '@/pages/pos/PosPage';
 import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
@@ -19,6 +22,7 @@ import { PurchaseOrdersPage } from '@/pages/procurement/PurchaseOrdersPage';
 import { ManufacturingPage } from '@/pages/manufacturing/ManufacturingPage';
 import { ProjectsPage } from '@/pages/projects/ProjectsPage';
 import { AssetsPage } from '@/pages/accounting/AssetsPage';
+import { TripsPage } from '@/pages/logistics/TripsPage';
 
 export function App() {
   return (
@@ -40,9 +44,12 @@ export function App() {
           <Route path="/accounting/assets" element={<AssetsPage />} />
           <Route path="/payroll/casuals" element={<PayCasualsPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
+          <Route path="/banking/mpesa-reconcile" element={<MpesaReconcilePage />} />
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/settings/audit-log" element={<AuditLogPage />} />
+          <Route path="/settings/coupons" element={<CouponsPage />} />
+          <Route path="/settings/import" element={<ImportPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

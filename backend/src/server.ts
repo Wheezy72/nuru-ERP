@@ -15,13 +15,19 @@ import reportingRoutes from './modules/reporting/http/reporting.routes';
 import authRoutes from './modules/auth/http/auth.routes';
 import mpesaRoutes from './modules/payments/http/mpesa.routes';
 import gatewayRoutes from './modules/payments/http/gateway.routes';
+import couponRoutes from './modules/invoicing/http/coupon.routes';
 import stockTakeRoutes from './modules/stocktake/http/stocktake.routes';
+import importRoutes from './modules/import/http/import.routes';
+import shiftRoutes from './modules/shifts/http/shift.routes';
 import payrollRoutes from './modules/payroll/http/payroll.routes';
 import procurementRoutes from './modules/procurement/http/procurement.routes';
 import manufacturingRoutes from './modules/manufacturing/http/manufacturing.routes';
 import projectRoutes from './modules/projects/http/project.routes';
 import accountingRoutes from './modules/accounting/http/accounting.routes';
+import taxQueueRoutes from './modules/accounting/http/tax.routes';
+import logisticsRoutes from './modules/logistics/http/logistics.routes';
 import { prisma as basePrisma } from './shared/prisma/client';
+import { idempotencyMiddleware } from './shared/middleware/idempotency';
 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
@@ -55,6 +61,9 @@ if (process.env.SENTRY_DSN) {
 app.use(express.json());
 app.use(morgan('dev'));
 
+// Idempotency handling for write operations (POST/PUT/PATCH) using Idempotency-Key header.
+app.use(idempotencyMiddleware);
+
 app.get('/health', async (_req, res) => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,12 +94,16 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reporting', reportingRoutes);
 app.use('/api/payments/mpesa', mpesaRoutes);
 app.use('/api/payments/gateway', gatewayRoutes);
+app.use('/api/coupons', couponRoutes);
 app.use('/api/stocktakes', stockTakeRoutes);
+app.use('/api/import', importRoutes);
+app.use('/api/shifts', shiftRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/procurement', procurementRoutes);
 app.use('/api/manufacturing', manufacturingRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/accounting', accountingRoutes);
+app.use('/api/tax', taxQueueRoutes);
 
 if (process.env.SENTRY_DSN) {
   app.use(Sentry.Handlers.errorHandler());

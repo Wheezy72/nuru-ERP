@@ -8,18 +8,27 @@ export type Theme = 'default' | 'outdoor';
 export function AppShell() {
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [theme, setTheme] = React.useState<Theme>('default');
+  const [trainingMode, setTrainingMode] = React.useState(false);
 
   React.useEffect(() => {
-    const stored =
+    const storedTheme =
       (typeof window !== 'undefined' &&
         (window.localStorage.getItem('nuru_theme') as Theme | null)) ||
       null;
-    if (stored === 'outdoor' || stored === 'default') {
-      setTheme(stored);
-      document.documentElement.dataset.theme = stored;
+    if (storedTheme === 'outdoor' || storedTheme === 'default') {
+      setTheme(storedTheme);
+      document.documentElement.dataset.theme = storedTheme;
     } else {
       document.documentElement.dataset.theme = 'default';
     }
+
+    const storedTraining =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('nuru_training')
+        : null;
+    const active = storedTraining === '1';
+    setTrainingMode(active);
+    document.documentElement.dataset.training = active ? 'true' : 'false';
   }, []);
 
   React.useEffect(() => {
@@ -47,15 +56,37 @@ export function AppShell() {
     });
   };
 
+  const toggleTrainingMode = () => {
+    setTrainingMode((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('nuru_training', next ? '1' : '0');
+      }
+      document.documentElement.dataset.training = next ? 'true' : 'false';
+      return next;
+    });
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-border px-4 py-2">
-          <div className="text-sm font-medium text-muted-foreground">
-            Nuru ERP
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <span>Nuru ERP</span>
+            {trainingMode && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-900">
+                TRAINING MODE
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              className="rounded-md border border-border bg-background px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+              onClick={toggleTrainingMode}
+            >
+              {trainingMode ? 'Exit Training' : 'Training Mode'}
+            </button>
             <button
               className="rounded-md border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-muted/40"
               onClick={toggleTheme}

@@ -5,6 +5,7 @@ import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 import { LoyaltyService } from '../../customers/core/LoyaltyService';
 import { AccountingService } from '../../accounting/core/AccountingService';
 import { computeTaxBreakdown } from './taxMath';
+import { computeLineTotal, money, roundCurrency } from '../../../shared/finance/money';
 
 export class InvoiceService {
   private tenantId: string;
@@ -51,13 +52,22 @@ export class InvoiceService {
         skip,
         take: pageSize,
         orderBy: { issueDate: 'desc' },
-        include: { customer: true },
+        include: { customer: true, taxQueueEntries: true },
       }),
       prisma.invoice.count({ where }),
     ]);
 
+    const itemsWithTaxStatus = items.map((inv) => {
+      const entry = inv.taxQueueEntries?.[0];
+      const taxStatus = entry?.status ?? null;
+      return {
+        ...inv,
+        taxStatus,
+      };
+    });
+
     return {
-      items,
+      items: itemsWithTaxStatus,
       page,
       pageSize,
       total,
@@ -69,10 +79,12 @@ export class InvoiceService {
     customerId: string;
     issueDate: Date;
     dueDate?: Date;
+    isTraining?: boolean;
+    couponCode?: string;
     items: {
       productId: string;
       quantity: Prisma.Decimal;
-      unitPrice: Prisma.Decimal;
+      unitPrice?: Prisma.Decimal | null;
       uomId: string;
       hsCode: string;
       taxRate: TaxRate;
@@ -81,10 +93,146 @@ export class InvoiceService {
     const prisma = this.prisma;
 
     return prisma.$transaction(async (tx) => {
-      const subtotal = input.items.reduce(
-        (acc, item) => acc.add(item.quantity.mul(item.unitPrice)),
-        new Prisma.Decimal(0)
+      // Resolve unit prices via price lists / default price when not provided.
+      const resolvedItems = [];
+      for (const rawItem of input.items) {
+        const quantity = money(rawItem.quantity);
+        let unitPriceDecimal: Prisma.Decimal;
+
+        if (
+          rawItem.unitPrice !== undefined &&
+          rawItem.unitPrice !== null &&
+          (rawItem.unitPrice as unknown as Prisma.Decimal).gt(0)
+        ) {
+          unitPriceDecimal = rawItem.unitPrice as unknown as Prisma.Decimal;
+        } else {
+          // Pricing rules:
+          // 1) If customer has a price list, use that list's price for this product.
+          // 2) Else if there is a tenant default price list, try that.
+          // 3) Else fall back to product.defaultPrice.
+          const customer = await tx.customer.findFirst({
+            where: { id: input.customerId, tenantId: this.tenantId },
+          });
+
+          let priceListId: string | null =
+            (customer?.priceListId as string | null) ?? null;
+
+          if (!priceListId) {
+            const defaultList = await tx.priceList.findFirst({
+              where: { tenantId: this.tenantId, isDefault: true },
+            });
+            priceListId = defaultList?.id ?? null;
+          }
+
+          let price: Prisma.Decimal | null = null;
+
+          if (priceListId) {
+            const item = await tx.priceListItem.findFirst({
+              where: {
+                tenantId: this.tenantId,
+                priceListId,
+                productId: rawItem.productId,
+              },
+            });
+            if (item) {
+              price = item.unitPrice as unknown as Prisma.Decimal;
+            }
+          }
+
+          if (!price) {
+            const product = await tx.product.findFirst({
+              where: { id: rawItem.productId, tenantId: this.tenantId },
+            });
+            if (!product) {
+              throw new Error('Product not found for pricing');
+            }
+            price = product.defaultPrice as unknown as Prisma.Decimal;
+          }
+
+          unitPriceDecimal = price;
+        }
+
+        const lineTotal = computeLineTotal(quantity, unitPriceDecimal);
+        resolvedItems.push({
+          ...rawItem,
+          quantity,
+          unitPrice: unitPriceDecimal,
+          lineTotal,
+        });
+      }
+
+      const subtotal = resolvedItems.reduce(
+        (acc, item) => acc.add(item.lineTotal),
+        money(0),
       );
+
+      let discount = money(0);
+      let appliedCoupon: { id: string; code: string } | null = null;
+
+      if (input.couponCode) {
+        const code = input.couponCode.trim().toUpperCase();
+        const now = new Date();
+
+        const coupon = await tx.coupon.findFirst({
+          where: {
+            tenantId: this.tenantId,
+            code,
+            active: true,
+          },
+        });
+
+        if (!coupon) {
+          throw new Error('Invalid or inactive coupon code');
+        }
+
+        if (coupon.validFrom && now < coupon.validFrom) {
+          throw new Error('Coupon is not yet valid');
+        }
+        if (coupon.validTo && now > coupon.validTo) {
+          throw new Error('Coupon has expired');
+        }
+        if (coupon.maxUses !== null && coupon.maxUses !== undefined) {
+          if (coupon.usedCount >= coupon.maxUses) {
+            throw new Error('Coupon usage limit reached');
+          }
+        }
+        if (coupon.minSubtotal) {
+          const minSub = coupon.minSubtotal as unknown as Prisma.Decimal;
+          if (subtotal.lt(minSub)) {
+            throw new Error(
+              `Coupon requires a minimum subtotal of ${minSub.toString()}`,
+            );
+          }
+        }
+
+        let couponDiscount = money(0);
+
+        if (coupon.percentageOff) {
+          const pct = coupon.percentageOff as unknown as Prisma.Decimal;
+          if (pct.gt(0)) {
+            couponDiscount = couponDiscount.add(subtotal.mul(pct));
+          }
+        }
+
+        if (coupon.amountOff) {
+          const amt = coupon.amountOff as unknown as Prisma.Decimal;
+          if (amt.gt(0)) {
+            couponDiscount = couponDiscount.add(amt);
+          }
+        }
+
+        if (couponDiscount.gt(subtotal)) {
+          couponDiscount = subtotal;
+        }
+
+        discount = couponDiscount;
+        appliedCoupon = { id: coupon.id, code: coupon.code };
+      }
+
+      const totalBeforeRound = subtotal.sub(discount);
+      const zero = money(0);
+      const nonNegative = totalBeforeRound.lt(zero) ? zero : totalBeforeRound;
+      const roundedTotal = roundCurrency(nonNegative);
 
       const invoiceNo = `INV-${Date.now()}`;
 
@@ -96,15 +244,16 @@ export class InvoiceService {
           status: 'Draft',
           issueDate: input.issueDate,
           dueDate: input.dueDate,
-          totalAmount: subtotal,
+          totalAmount: roundedTotal,
+          isTraining: input.isTraining ?? false,
           items: {
-            create: input.items.map((item) => ({
+            create: resolvedItems.map((item) => ({
               tenantId: this.tenantId,
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               uomId: item.uomId,
-              lineTotal: item.quantity.mul(item.unitPrice),
+              lineTotal: item.lineTotal,
               hsCode: item.hsCode,
               taxRate: item.taxRate,
             })),
@@ -113,8 +262,42 @@ export class InvoiceService {
         include: { items: true },
       });
 
-      // Tax breakdown is derived from InvoiceItems for future KRA integration.
-      // This method can be invoked later via buildKraPayload.
+      if (appliedCoupon && discount.gt(zero)) {
+        await tx.couponRedemption.create({
+          data: {
+            tenantId: this.tenantId,
+            couponId: appliedCoupon.id,
+            invoiceId: invoice.id,
+            discount,
+          },
+        });
+
+        await tx.coupon.update({
+          where: { id: appliedCoupon.id },
+          data: {
+            usedCount: {
+              increment: 1,
+            },
+          },
+        });
+
+        await tx.systemLog.create({
+          data: {
+            tenantId: this.tenantId,
+            userId: null,
+            action: 'COUPON_APPLIED',
+            entityType: 'Invoice',
+            entityId: invoice.id,
+            metadata: {
+              couponCode: appliedCoupon.code,
+              discount,
+              subtotal,
+              total: roundedTotal,
+            },
+          },
+        });
+      }
+
       return invoice;
     });
   }
@@ -144,6 +327,54 @@ export class InvoiceService {
     }
     if (invoice.status !== 'Draft') {
       throw new Error('Only draft invoices can be posted');
+    }
+
+    // Training invoices: mark as posted but do not touch stock or GL.
+    if (invoice.isTraining) {
+      const updatedTraining = await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { status: 'Posted' },
+      });
+
+      await prisma.systemLog.create({
+        data: {
+          tenantId: this.tenantId,
+          userId: userId ?? null,
+          action: 'INVOICE_POSTED_TRAINING',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          metadata: {
+            locationId,
+            totalAmount: invoice.totalAmount,
+          },
+        },
+      });
+
+      // Optional: send a clearly marked training receipt via WhatsApp.
+      try {
+        const customer = invoice.customer;
+        if (customer?.phone) {
+          const whatsappService = new WhatsAppService(this.tenantId);
+          await whatsappService.sendInvoice(customer.phone, {
+            invoiceNo: invoice.invoiceNo,
+            issueDate: invoice.issueDate,
+            totalAmount: invoice.totalAmount.toString(),
+            customerName: customer.name,
+            items: invoice.items.map((item) => ({
+              productName: item.product?.name ?? 'Item',
+              quantity: item.quantity.toString(),
+              unitPrice: item.unitPrice.toString(),
+              lineTotal: item.lineTotal.toString(),
+            })),
+            isTraining: true,
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send training invoice WhatsApp notification', err);
+      }
+
+      return updatedTraining;
     }
 
     // Adjust stock for each invoice item before marking as posted
@@ -300,18 +531,19 @@ export class InvoiceService {
       return { created: 0 };
     }
 
-    const unitPriceDecimal = new Prisma.Decimal(input.unitPrice);
-    const qty = new Prisma.Decimal(1);
+    const unitPriceDecimal = money(input.unitPrice);
+    const qty = money(1);
 
     await prisma.$transaction(async (tx) => {
       for (const customer of customers) {
         const invoiceNo = `SCH-${Date.now()}-${Math.floor(
-          Math.random() * 10000
+          Math.random() * 10000,
         )
           .toString()
           .padStart(4, '0')}`;
 
-        const lineTotal = qty.mul(unitPriceDecimal);
+        const lineTotal = computeLineTotal(qty, unitPriceDecimal);
+        const totalAmount = roundCurrency(lineTotal);
 
         await tx.invoice.create({
           data: {
@@ -320,7 +552,7 @@ export class InvoiceService {
             invoiceNo,
             status: 'Draft',
             issueDate: input.issueDate,
-            totalAmount: lineTotal,
+            totalAmount,
             items: {
               create: [
                 {
@@ -355,7 +587,7 @@ export class InvoiceService {
       reference?: string;
       paidAt: Date;
       userId?: string | null;
-    }
+    },
   ) {
     const prisma = this.prisma;
 
@@ -365,6 +597,9 @@ export class InvoiceService {
 
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId: this.tenantId },
+      include: {
+        customer: true,
+      },
     });
 
     if (!invoice) {
@@ -386,6 +621,7 @@ export class InvoiceService {
     const paymentAmount = new Prisma.Decimal(input.amount);
     const newPaidTotal = alreadyPaid.add(paymentAmount);
     const totalAmountDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+    const balanceDecimal = totalAmountDecimal.sub(newPaidTotal);
 
     let newStatus = invoice.status;
     if (newPaidTotal.gte(totalAmountDecimal)) {
@@ -406,6 +642,7 @@ export class InvoiceService {
         accountId: null,
         amount: paymentAmount,
         type: 'Credit',
+        paymentMethod: 'MANUAL',
         reference:
           input.reference ||
           `Manual ${input.method} payment for ${invoice.invoiceNo}`,
@@ -450,6 +687,25 @@ export class InvoiceService {
       }
     }
 
+    // Fire-and-forget WhatsApp payment receipt for manual entries.
+    try {
+      const customer = invoice.customer;
+      if (customer?.phone) {
+        const whatsapp = new WhatsAppService(this.tenantId);
+        await whatsapp.sendPaymentReceipt(customer.phone, {
+          invoiceNo: invoice.invoiceNo,
+          amountPaid: paymentAmount.toString(),
+          totalAmount: totalAmountDecimal.toString(),
+          balance: balanceDecimal.toString(),
+          method: 'MANUAL',
+          customerName: customer.name,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send manual payment receipt via WhatsApp', err);
+    }
+
     return updated;
   }
 
@@ -479,6 +735,11 @@ export class InvoiceService {
           },
         },
         transactions: true,
+        couponRedemptions: {
+          include: {
+            coupon: true,
+          },
+        },
       },
     });
 
@@ -491,16 +752,27 @@ export class InvoiceService {
       .reduce(
         (acc, tx) =>
           acc.add(tx.amount as unknown as Prisma.Decimal),
-        new Prisma.Decimal(0)
+        new Prisma.Decimal(0),
       );
 
     const totalDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
     const balanceDecimal = totalDecimal.sub(paidDecimal);
 
+    const discountDecimal =
+      invoice.couponRedemptions.length > 0
+        ? (invoice.couponRedemptions[0].discount as unknown as Prisma.Decimal)
+        : new Prisma.Decimal(0);
+
     return {
       invoice,
       paidAmount: Number(paidDecimal.toString()),
       balanceDue: Number(balanceDecimal.toString()),
+      coupon: invoice.couponRedemptions[0]
+        ? {
+            code: invoice.couponRedemptions[0].coupon.code,
+            discount: Number(discountDecimal.toString()),
+          }
+        : null,
     };
   }
 

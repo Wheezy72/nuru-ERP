@@ -29,6 +29,7 @@ model Tenant {
   stockQuants         StockQuant[]
   customers           Customer[]
   invoices            Invoice[]
+  taxQueueEntries     TaxQueueEntry[]
   transactions        Transaction[]
   members             Member[]
   accounts            Account[]
@@ -57,13 +58,17 @@ model Tenant {
   productionOrders     ProductionOrder[]
   assets               Asset[]
   depreciationRuns     DepreciationRun[]
-}
-
-
-enum UserRole {
-  ADMIN
-  MANAGER
-  CASHIER
+  idempotencyKeys      IdempotencyKey[]
+  priceLists           PriceList[]
+  priceListItems       PriceListItem[]
+  coupons              Coupon[]
+  couponRedemptions    CouponRedemption[]
+  shifts               Shift[]
+  vehicles             Vehicle[]
+  trips                Trip[]
+  gatePasses           GatePass[]
+  taxQueueEntries      TaxQueueEntry[]
+  tripInvoices         TripInvoice[]
 }
 
 model User {
@@ -120,6 +125,8 @@ model Location {
   stockTransfersFrom   StockTransfer[]  @relation("FromLocation")
   stockTransfersTo     StockTransfer[]  @relation("ToLocation")
   productionOrders     ProductionOrder[]
+  gatePassesFrom       GatePass[]       @relation("GateFromLocation")
+  gatePassesTo         GatePass[]       @relation("GateToLocation")
 
   @@index([tenantId])
   @@unique([tenantId, code])
@@ -133,6 +140,7 @@ model Product {
   description      String?
   defaultUomId     String          @db.Uuid
   category         String?
+  defaultPrice     Decimal         @default(0)
   isActive         Boolean         @default(true)
   minStockQuantity Decimal?        @default(0)
   createdAt        DateTime        @default(now())
@@ -187,34 +195,34 @@ model StockQuant {
 }
 
 model Customer {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @db.Uuid
-  name      String
-  phone     String?
-  email     String?
-  kraPin    String?  // KRA PIN for compliance (optional)
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String
+  phone       String?
+  email       String?
+  kraPin      String?  // KRA PIN for compliance (optional)
   loyaltyPoints Decimal @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  priceListId String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  invoices Invoice[]
-
-  @@index([tenantId])
-}
-
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  invoices   
 model Invoice {
-  id           String        @id @default(uuid()) @db.Uuid
-  tenantId     String        @db.Uuid
-  customerId   String        @db.Uuid
-  projectId    String?       @db.Uuid
-  invoiceNo    String
-  status       String        // "Draft", "Posted", "Paid", "Partial"
-  issueDate    DateTime
-  dueDate      DateTime?
-  totalAmount  Decimal       @default(0)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  customerId      String        @db.Uuid
+  projectId       String?       @db.Uuid
+  invoiceNo       String
+  status          String        // "Draft", "Posted", "Paid", "Partial"
+  issueDate       DateTime
+  dueDate         DateTime?
+  totalAmount     Decimal       @default(0)
+  controlCode     String?
+  qrCodeSignature String?
+  isTraining      Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   customer     Customer      @relation(fields: [customerId], references: [id])
@@ -222,6 +230,9 @@ model Invoice {
   items        InvoiceItem[]
   transactions Transaction[]
   glJournalEntries GLJournalEntry[]
+  couponRedemptions CouponRedemption[]
+  taxQueueEntries TaxQueueEntry[]
+  tripInvoices     TripInvoice[]
 
   @@index([tenantId])
   @@index([tenantId, projectId])
@@ -249,15 +260,16 @@ model InvoiceItem {
 }
 
 model Transaction {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @db.Uuid
-  invoiceId        String?  @db.Uuid
-  accountId        String?  @db.Uuid
-  supplierInvoiceId String? @db.Uuid
-  amount           Decimal
-  type             String   // "Credit", "Debit"
-  reference        String?
-  createdAt        DateTime @default(now())
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String          @db.Uuid
+  invoiceId         String?         @db.Uuid
+  accountId         String?         @db.Uuid
+  supplierInvoiceId String?         @db.Uuid
+  amount            Decimal
+  type              TransactionType
+  paymentMethod     PaymentMethod?  // When applicable: CASH, MPESA, CARD, MANUAL, OTHER
+  reference         String?
+  createdAt         DateTime        @default(now())
 
   tenant           Tenant           @relation(fields: [tenantId], references: [id])
   invoice          Invoice?         @relation(fields: [invoiceId], references: [id])
@@ -274,11 +286,17 @@ enum AccountType {
   MerryGoRound
 }
 
-enum TaxRate {
-  VAT_16
-  VAT_8
-  EXEMPT
-  ZERO
+enum TransactionType {
+  Debit
+  Credit
+}
+
+enum PaymentMethod {
+  CASH
+  MPESA
+  CARD
+  MANUAL
+  OTHER
 }
 
 model Member {
@@ -324,6 +342,7 @@ model Loan {
   issuedAt      DateTime
   dueDate       DateTime?
   status        String           // "Pending", "Active", "Closed", "Defaulted"
+  isTraining    Boolean          @default(false)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -507,11 +526,122 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  purchaseOrders  PurchaseOrder[]
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  purchaseOrders   PurchaseOrder[]
   supplierInvoices SupplierInvoice[]
 
   @@index([tenantId])
+}
+
+model Vehicle {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  registration    String
+  type            String?
+  driverName      String?
+  driverPhone     String?
+  nextServiceDate DateTime?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  trips           Trip[]
+
+  @@index([tenantId])
+  @@unique([tenantId, registration])
+}
+
+enum TripStatus {
+  PLANNED
+  LOADING
+  DISPATCHED
+  DELIVERED
+  RETURNED
+}
+
+model Trip {
+  id          String      @id @default(uuid()) @db.Uuid
+  tenantId    String      @db.Uuid
+  vehicleId   String      @db.Uuid
+  code        String
+  status      TripStatus  @default(PLANNED)
+  plannedDate DateTime
+  dispatchedAt DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id])
+  gatePasses  GatePass[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+enum GatePassStatus {
+  DRAFT
+  ISSUED
+  SCANNED_OUT
+  RETURNED
+}
+
+model GatePass {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  tripId          String         @db.Uuid
+  fromLocationId  String         @db.Uuid
+  toLocationId    String         @db.Uuid
+  status          GatePassStatus @default(DRAFT)
+  code            String
+  createdAt       DateTime       @default(now())
+  issuedAt        DateTime?
+  scannedOutAt    DateTime?
+  returnedAt      DateTime?
+
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  trip            Trip           @relation(fields: [tripId], references: [id])
+  fromLocation    Location       @relation("GateFromLocation", fields: [fromLocationId], references: [id])
+  toLocation      Location       @relation("GateToLocation", fields: [toLocationId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model TaxQueueEntry {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  invoiceId  String   @db.Uuid
+  status     String   // PENDING, SENT, FAILED
+  lastError  String?
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@unique([tenantId, invoiceId])
+}
+
+model TripInvoice {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tripId    String   @db.Uuid
+  invoiceId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  trip     Trip     @relation(fields: [tripId], references: [id])
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, tripId])
+  @@index([tenantId, invoiceId])
+  @@unique([tenantId, tripId, invoiceId])
 }
 
 model Project {
@@ -667,9 +797,7 @@ model GLJournalLine {
   @@index([tenantId, journalEntryId])
 }
 
-/**
- * Fixed Asset registry entry. Depreciation is posted via GLJournalEntry.
- */
+// Fixed Asset registry entry. Depreciation is posted via GLJournalEntry.
 model Asset {
   id                    String   @id @default(uuid()) @db.Uuid
   tenantId              String   @db.Uuid
@@ -688,9 +816,7 @@ model Asset {
   @@index([tenantId])
 }
 
-/**
- * Tracks when depreciation was last run for a tenant/month.
- */
+// Tracks when depreciation was last run for a tenant/month.
 model DepreciationRun {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @db.Uuid
@@ -774,7 +900,7 @@ model SystemLog {
   user       User?    @relation(fields: [userId], references: [id])
 
   @@index([tenantId])
-  @@index([tenantId, entityType])
+  @@index([tenantId, action])
 }
 
 enum EmployeeRole {
@@ -785,6 +911,11 @@ enum EmployeeRole {
 enum EmployeeStatus {
   ACTIVE
   INACTIVE
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
 }
 
 model Employee {
@@ -817,4 +948,112 @@ model PasswordResetToken {
 
   @@index([tenantId])
   @@index([userId])
+}
+
+model IdempotencyKey {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid
+  key         String
+  method      String
+  path        String
+  requestHash String?
+  response    Json?
+  statusCode  Int?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@unique([key, tenantId])
+}
+
+model PriceList {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  code      String
+  name      String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  items     PriceListItem[]
+  customers Customer[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model PriceListItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  priceListId String   @db.Uuid
+  productId   String   @db.Uuid
+  unitPrice   Decimal
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  priceList   PriceList @relation(fields: [priceListId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, priceListId, productId])
+}
+
+model Coupon {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  code          String
+  description   String?
+  percentageOff Decimal? // 0.0–1.0
+  amountOff     Decimal?
+  active        Boolean  @default(true)
+  validFrom     DateTime?
+  validTo       DateTime?
+  maxUses       Int?
+  usedCount     Int      @default(0)
+  minSubtotal   Decimal? @default(0)
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  redemptions   CouponRedemption[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model CouponRedemption {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  couponId  String   @db.Uuid
+  invoiceId String   @db.Uuid
+  discount  Decimal
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  coupon    Coupon   @relation(fields: [couponId], references: [id])
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, invoiceId])
+}
+
+model Shift {
+  id                   String      @id @default(uuid()) @db.Uuid
+  tenantId             String      @db.Uuid
+  userId               String      @db.Uuid
+  status               ShiftStatus @default(OPEN)
+  openedAt             DateTime    @default(now())
+  closedAt             DateTime?
+  openingFloat         Decimal     @default(0)
+  closingFloat         Decimal?
+  expectedClosingCash  Decimal?    @default(0)
+  variance             Decimal?    @default(0)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  tenant               Tenant      @relation(fields: [tenantId], references: [id])
+  user                 User        @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, userId, status])
 }
