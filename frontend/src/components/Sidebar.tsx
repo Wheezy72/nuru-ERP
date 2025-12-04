@@ -104,6 +104,12 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
+    label: 'Trips & Gate Passes',
+    path: '/logistics/trips',
+    group: 'Maker',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     label: 'Projects',
     path: '/projects',
     group: 'Planner',

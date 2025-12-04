@@ -22,6 +22,7 @@ import { PurchaseOrdersPage } from '@/pages/procurement/PurchaseOrdersPage';
 import { ManufacturingPage } from '@/pages/manufacturing/ManufacturingPage';
 import { ProjectsPage } from '@/pages/projects/ProjectsPage';
 import { AssetsPage } from '@/pages/accounting/AssetsPage';
+import { TripsPage } from '@/pages/logistics/TripsPage';
 
 export function App() {
   return (

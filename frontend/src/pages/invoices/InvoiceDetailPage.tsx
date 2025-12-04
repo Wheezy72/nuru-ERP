@@ -28,6 +28,8 @@ type InvoiceDto = {
   issueDate: string;
   dueDate?: string | null;
   totalAmount: string;
+  controlCode?: string | null;
+  qrCodeSignature?: string | null;
   customer: CustomerDto;
   items: InvoiceItemDto[];
 };
@@ -134,6 +136,12 @@ export function InvoiceDetailPage() {
             {new Date(invoice.issueDate).toLocaleDateString()} • Status{' '}
             <span className="font-semibold">{invoice.status}</span>
           </p>
+          {invoice.controlCode && (
+            <p className="mt-1 text-[0.7rem] text-muted-foreground">
+              Tax Control Code:{' '}
+              <span className="font-mono">{invoice.controlCode}</span>
+            </p>
+          )}
           {detail.coupon && (
             <p className="mt-1 text-[0.7rem] text-emerald-800">
               Coupon {detail.coupon.code} applied (

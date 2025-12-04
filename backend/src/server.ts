@@ -25,6 +25,7 @@ import manufacturingRoutes from './modules/manufacturing/http/manufacturing.rout
 import projectRoutes from './modules/projects/http/project.routes';
 import accountingRoutes from './modules/accounting/http/accounting.routes';
 import taxQueueRoutes from './modules/accounting/http/tax.routes';
+import logisticsRoutes from './modules/logistics/http/logistics.routes';
 import { prisma as basePrisma } from './shared/prisma/client';
 import { idempotencyMiddleware } from './shared/middleware/idempotency';
 

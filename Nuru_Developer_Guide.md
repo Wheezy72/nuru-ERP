@@ -81,6 +81,7 @@ Core:
       - Writes `INVOICE_POSTED` in `SystemLog`.
       - Sends WhatsApp invoice summary.
       - Triggers GL via `AccountingService.recordInvoicePosted`.
+      - Enqueues invoice into `TaxQueueEntry` for tax signing.
     - Training:
       - Marks as `Posted` but **skips** stock and GL.
       - Writes `INVOICE_POSTED_TRAINING`.
@@ -92,6 +93,7 @@ HTTP:
 - `invoice.routes.ts`
   - CRUD and posting endpoints.
   - Reads `x-training-mode` header to set `isTraining` during invoice creation.
+  - After posting, enqueues invoice for tax signing via `TaxService.enqueueInvoice`.
 
 ### 3.3 Payments – `backend/src/modules/payments`
 
@@ -131,6 +133,8 @@ Core:
         - `shiftVariances` (`SHIFT_VARIANCE` logs).
         - `voidLikeDiscounts` (`COUPON_APPLIED` logs).
         - `trainingInvoices` (invoices with `isTraining = true`).
+      - If risk alerts are enabled in tenant features:
+        - Sends short WhatsApp risk alert to ADMIN phones when score drops below threshold.
   - Most sales/tax/debtor queries explicitly **exclude training invoices**.
 
 ### 3.5 Reporting – `backend/src/modules/reporting`
@@ -152,6 +156,18 @@ Core:
 - `manufacturing` – BOMs, production orders; GL for manufacturing.
 - `projects` – project-coded invoices and POs for job costing.
 - `accounting` – GL account setup, invoice/PO postings, depreciation.
+- `logistics` – vehicles, trips, and gate passes for dispatch control:
+  - `Vehicle` – per-tenant vehicle registry (registration, driver, next service).
+  - `Trip` – groups deliveries for a vehicle on a given day, with `TripStatus`.
+  - `GatePass` – per-trip passes from Location → Location with `GatePassStatus`.
+  - `LogisticsService` – creates trips with initial gate passes, lists trips, handles:
+    - Gate pass issuance (`GATEPASS_ISSUED` log).
+    - Gate scan-out at the gate (`GATEPASS_SCANNED_OUT` log, trip marked `DISPATCHED`).
+  - HTTP routes (`/api/logistics`):
+    - `GET /trips` – list recent trips with vehicle + gate pass.
+    - `POST /trips` – create new trip and gate pass from location codes.
+    - `POST /gate-passes/:id/issue` – mark as ISSUED.
+    - `POST /gate-passes/:id/scan-out` – mark as SCANNED_OUT.
 
 ---
 

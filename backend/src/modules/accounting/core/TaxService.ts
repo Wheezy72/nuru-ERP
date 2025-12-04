@@ -135,9 +135,8 @@ export class TaxService {
         await tx.invoice.update({
           where: { id: invoice.id },
           data: {
-            // we do not yet persist these fields; wire them in once Invoice has extra columns
-            // controlCode,
-            // qrCodeSignature,
+            controlCode: controlCode ?? invoice.controlCode,
+            qrCodeSignature: qrCodeSignature ?? invoice.qrCodeSignature,
           },
         });
 

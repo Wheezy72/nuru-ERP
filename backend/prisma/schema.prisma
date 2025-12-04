@@ -210,18 +210,20 @@ model Customer {
   tenant      Tenant    @relation(fields: [tenantId], references: [id])
   invoices   
 model Invoice {
-  id           String        @id @default(uuid()) @db.Uuid
-  tenantId     String        @db.Uuid
-  customerId   String        @db.Uuid
-  projectId    String?       @db.Uuid
-  invoiceNo    String
-  status       String        // "Draft", "Posted", "Paid", "Partial"
-  issueDate    DateTime
-  dueDate      DateTime?
-  totalAmount  Decimal       @default(0)
-  isTraining   Boolean       @default(false)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  customerId      String        @db.Uuid
+  projectId       String?       @db.Uuid
+  invoiceNo       String
+  status          String        // "Draft", "Posted", "Paid", "Partial"
+  issueDate       DateTime
+  dueDate         DateTime?
+  totalAmount     Decimal       @default(0)
+  controlCode     String?
+  qrCodeSignature String?
+  isTraining      Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   customer     Customer      @relation(fields: [customerId], references: [id])
