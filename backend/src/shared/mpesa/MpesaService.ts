@@ -139,6 +139,15 @@ export class MpesaService {
       return;
     }
 
+    if (invoice.isTraining) {
+      // Training invoices should not change financials; log and exit.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Ignoring M-Pesa payment for training invoice ${invoiceId} (tenant ${this.tenantId})`,
+      );
+      return invoice;
+    }
+
     if (amount <= 0) {
       // eslint-disable-next-line no-console
       console.error(
