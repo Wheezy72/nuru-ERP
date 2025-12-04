@@ -71,10 +71,11 @@ export class InvoiceService {
     issueDate: Date;
     dueDate?: Date;
     isTraining?: boolean;
+    couponCode?: string;
     items: {
       productId: string;
       quantity: Prisma.Decimal;
-      unitPrice: Prisma.Decimal;
+      unitPrice?: Prisma.Decimal | null;
       uomId: string;
       hsCode: string;
       taxRate: TaxRate;
@@ -83,13 +84,146 @@ export class InvoiceService {
     const prisma = this.prisma;
 
     return prisma.$transaction(async (tx) => {
-      const subtotal = input.items.reduce(
-        (acc, item) =>
-          acc.add(computeLineTotal(item.quantity, item.unitPrice)),
+      // Resolve unit prices via price lists / default price when not provided.
+      const resolvedItems = [];
+      for (const rawItem of input.items) {
+        const quantity = money(rawItem.quantity);
+        let unitPriceDecimal: Prisma.Decimal;
+
+        if (
+          rawItem.unitPrice !== undefined &&
+          rawItem.unitPrice !== null &&
+          (rawItem.unitPrice as unknown as Prisma.Decimal).gt(0)
+        ) {
+          unitPriceDecimal = rawItem.unitPrice as unknown as Prisma.Decimal;
+        } else {
+          // Pricing rules:
+          // 1) If customer has a price list, use that list's price for this product.
+          // 2) Else if there is a tenant default price list, try that.
+          // 3) Else fall back to product.defaultPrice.
+          const customer = await tx.customer.findFirst({
+            where: { id: input.customerId, tenantId: this.tenantId },
+          });
+
+          let priceListId: string | null =
+            (customer?.priceListId as string | null) ?? null;
+
+          if (!priceListId) {
+            const defaultList = await tx.priceList.findFirst({
+              where: { tenantId: this.tenantId, isDefault: true },
+            });
+            priceListId = defaultList?.id ?? null;
+          }
+
+          let price: Prisma.Decimal | null = null;
+
+          if (priceListId) {
+            const item = await tx.priceListItem.findFirst({
+              where: {
+                tenantId: this.tenantId,
+                priceListId,
+                productId: rawItem.productId,
+              },
+            });
+            if (item) {
+              price = item.unitPrice as unknown as Prisma.Decimal;
+            }
+          }
+
+          if (!price) {
+            const product = await tx.product.findFirst({
+              where: { id: rawItem.productId, tenantId: this.tenantId },
+            });
+            if (!product) {
+              throw new Error('Product not found for pricing');
+            }
+            price = product.defaultPrice as unknown as Prisma.Decimal;
+          }
+
+          unitPriceDecimal = price;
+        }
+
+        const lineTotal = computeLineTotal(quantity, unitPriceDecimal);
+        resolvedItems.push({
+          ...rawItem,
+          quantity,
+          unitPrice: unitPriceDecimal,
+          lineTotal,
+        });
+      }
+
+      const subtotal = resolvedItems.reduce(
+        (acc, item) => acc.add(item.lineTotal),
         money(0),
       );
 
-      const roundedTotal = roundCurrency(subtotal);
+      let discount = money(0);
+      let appliedCoupon: { id: string; code: string } | null = null;
+
+      if (input.couponCode) {
+        const code = input.couponCode.trim().toUpperCase();
+        const now = new Date();
+
+        const coupon = await tx.coupon.findFirst({
+          where: {
+            tenantId: this.tenantId,
+            code,
+            active: true,
+          },
+        });
+
+        if (!coupon) {
+          throw new Error('Invalid or inactive coupon code');
+        }
+
+        if (coupon.validFrom && now < coupon.validFrom) {
+          throw new Error('Coupon is not yet valid');
+        }
+        if (coupon.validTo && now > coupon.validTo) {
+          throw new Error('Coupon has expired');
+        }
+        if (coupon.maxUses !== null && coupon.maxUses !== undefined) {
+          if (coupon.usedCount >= coupon.maxUses) {
+            throw new Error('Coupon usage limit reached');
+          }
+        }
+        if (coupon.minSubtotal) {
+          const minSub = coupon.minSubtotal as unknown as Prisma.Decimal;
+          if (subtotal.lt(minSub)) {
+            throw new Error(
+              `Coupon requires a minimum subtotal of ${minSub.toString()}`,
+            );
+          }
+        }
+
+        let couponDiscount = money(0);
+
+        if (coupon.percentageOff) {
+          const pct = coupon.percentageOff as unknown as Prisma.Decimal;
+          if (pct.gt(0)) {
+            couponDiscount = couponDiscount.add(subtotal.mul(pct));
+          }
+        }
+
+        if (coupon.amountOff) {
+          const amt = coupon.amountOff as unknown as Prisma.Decimal;
+          if (amt.gt(0)) {
+            couponDiscount = couponDiscount.add(amt);
+          }
+        }
+
+        if (couponDiscount.gt(subtotal)) {
+          couponDiscount = subtotal;
+        }
+
+        discount = couponDiscount;
+        appliedCoupon = { id: coupon.id, code: coupon.code };
+      }
+
+      const totalBeforeRound = subtotal.sub(discount);
+      const zero = money(0);
+      const nonNegative = totalBeforeRound.lt(zero) ? zero : totalBeforeRound;
+      const roundedTotal = roundCurrency(nonNegative);
 
       const invoiceNo = `INV-${Date.now()}`;
 
@@ -102,14 +236,15 @@ export class InvoiceService {
           issueDate: input.issueDate,
           dueDate: input.dueDate,
           totalAmount: roundedTotal,
+          isTraining: input.isTraining ?? false,
           items: {
-            create: input.items.map((item) => ({
+            create: resolvedItems.map((item) => ({
               tenantId: this.tenantId,
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               uomId: item.uomId,
-              lineTotal: computeLineTotal(item.quantity, item.unitPrice),
+              lineTotal: item.lineTotal,
               hsCode: item.hsCode,
               taxRate: item.taxRate,
             })),
@@ -118,8 +253,42 @@ export class InvoiceService {
         include: { items: true },
       });
 
-      // Tax breakdown is derived from InvoiceItems for future KRA integration.
-      // This method can be invoked later via buildKraPayload.
+      if (appliedCoupon && discount.gt(zero)) {
+        await tx.couponRedemption.create({
+          data: {
+            tenantId: this.tenantId,
+            couponId: appliedCoupon.id,
+            invoiceId: invoice.id,
+            discount,
+          },
+        });
+
+        await tx.coupon.update({
+          where: { id: appliedCoupon.id },
+          data: {
+            usedCount: {
+              increment: 1,
+            },
+          },
+        });
+
+        await tx.systemLog.create({
+          data: {
+            tenantId: this.tenantId,
+            userId: null,
+            action: 'COUPON_APPLIED',
+            entityType: 'Invoice',
+            entityId: invoice.id,
+            metadata: {
+              couponCode: appliedCoupon.code,
+              discount,
+              subtotal,
+              total: roundedTotal,
+            },
+          },
+        });
+      }
+
       return invoice;
     });
   }
@@ -533,6 +702,11 @@ export class InvoiceService {
           },
         },
         transactions: true,
+        couponRedemptions: {
+          include: {
+            coupon: true,
+          },
+        },
       },
     });
 
@@ -545,16 +719,27 @@ export class InvoiceService {
       .reduce(
         (acc, tx) =>
           acc.add(tx.amount as unknown as Prisma.Decimal),
-        new Prisma.Decimal(0)
+        new Prisma.Decimal(0),
       );
 
     const totalDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
     const balanceDecimal = totalDecimal.sub(paidDecimal);
 
+    const discountDecimal =
+      invoice.couponRedemptions.length > 0
+        ? (invoice.couponRedemptions[0].discount as unknown as Prisma.Decimal)
+        : new Prisma.Decimal(0);
+
     return {
       invoice,
       paidAmount: Number(paidDecimal.toString()),
       balanceDue: Number(balanceDecimal.toString()),
+      coupon: invoice.couponRedemptions[0]
+        ? {
+            code: invoice.couponRedemptions[0].coupon.code,
+            discount: Number(discountDecimal.toString()),
+          }
+        : null,
     };
   }
 

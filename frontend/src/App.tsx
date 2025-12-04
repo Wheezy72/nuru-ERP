@@ -9,6 +9,7 @@ import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
 import { InvoiceDetailPage } from '@/pages/invoices/InvoiceDetailPage';
 import { MembersPage } from '@/pages/chama/MembersPage';
 import { AuditLogPage } from '@/pages/settings/AuditLogPage';
+import { CouponsPage } from '@/pages/settings/CouponsPage';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { PosPage } from '@/pages/pos/PosPage';
 import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
@@ -43,6 +44,7 @@ export function App() {
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/settings/audit-log" element={<AuditLogPage />} />
+          <Route path="/settings/coupons" element={<CouponsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

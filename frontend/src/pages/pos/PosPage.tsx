@@ -17,6 +17,7 @@ export function PosPage() {
   const [scan, setScan] = React.useState('');
   const [cart, setCart] = React.useState<CartLine[]>([]);
   const [customerName, setCustomerName] = React.useState('');
+  const [couponCode, setCouponCode] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const queryClient = useQueryClient();
 
@@ -83,7 +84,7 @@ export function PosPage() {
       const items = cart.map((line) => ({
         productId: line.id,
         quantity: '1', // server interprets via Prisma.Decimal; one unit per line
-        unitPrice: line.unitPrice.toString(),
+        // unitPrice omitted: server will apply dynamic pricing / price lists
         uomId: undefined,
         hsCode: '999999',
         taxRate: 'VAT_16',
@@ -92,6 +93,7 @@ export function PosPage() {
       const res = await apiClient.post('/invoices', {
         customerId,
         issueDate: today.toISOString(),
+        couponCode: couponCode || undefined,
         items,
       });
       return res.data;
@@ -235,33 +237,46 @@ export function PosPage() {
 
           <div className="space-y-3 text-xs">
             <div className="space-y-1">
-              <div className="text-[0.75rem] font-semibold text-foreground">
-                Customer (optional)
-              </div>
-              <Input
-                placeholder="Name shown on receipt (optional)"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-              />
-              <p className="text-[0.65rem] text-muted-foreground">
-                POS uses the default walk-in customer by default. Set
-                default_customer_id in localStorage to point to that record.
-              </p>
+            <div className="text-[0.75rem] font-semibold text-foreground">
+              Customer (optional)
             </div>
-            <Button
-              type="button"
-              className="w-full"
-              disabled={submitting || cart.length === 0}
-              onClick={handleCheckout}
-            >
-              {submitting ? 'Creating Invoice...' : 'Checkout & Create Invoice'}
-            </Button>
-            <p className="text-[0.65rem] text-muted-foreground">
-              This flow creates a real invoice behind the scenes. If Training
-              Mode is enabled in the header, those invoices will not touch stock
-              or the ledger.
+            <Input
+              placeholder="Name shown on receipt (optional)"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+            />
+            <p className="text-[0.7rem] text-muted-foreground mt-1">
+              POS uses the default walk-in customer by default. Set
+              default_customer_id in localStorage to point to that record.
             </p>
           </div>
+          <div className="space-y-1">
+            <div className="text-[0.75rem] font-semibold text-foreground">
+              Coupon code
+            </div>
+            <Input
+              placeholder="e.g. FUNDIS10"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+            />
+            <p className="text-[0.7rem] text-muted-foreground mt-1">
+              If valid, the coupon will be applied to this ticket before
+              checkout.
+            </p>
+          </div>
+          <Button
+            type="button"
+            className="w-full"
+            disabled={submitting || cart.length === 0}
+            onClick={handleCheckout}
+          >
+            {submitting ? 'Creating Invoice...' : 'Checkout & Create Invoice'}
+          </Button>
+          <p className="text-[0.7rem] text-muted-foreground mt-1">
+            This flow creates a real invoice behind the scenes. If Training
+            Mode is enabled in the header, those invoices will not touch stock
+            or the ledger.
+          </p>
         </div>
       </Card>
     </div>

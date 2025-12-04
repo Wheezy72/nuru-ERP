@@ -264,6 +264,8 @@ async function seedInventory(tenantId: string) {
         ? bag
         : piece;
 
+    const defaultPrice = faker.number.int({ min: 100, max: 3000 });
+
     const product = await prisma.product.create({
       data: {
         tenantId,
@@ -277,6 +279,7 @@ async function seedInventory(tenantId: string) {
           : name.includes('Oil')
           ? 'FMCG'
           : 'General',
+        defaultPrice,
         // Set a simple minimum stock threshold to enable meaningful alerts.
         minStockQuantity: faker.number.int({ min: 5, max: 30 }),
       },
@@ -541,6 +544,7 @@ async function seedFleetTenant(tenantId: string) {
         sku: faker.string.alphanumeric(8).toUpperCase(),
         defaultUomId: svc.defaultUomId,
         category: svc.category,
+        defaultPrice: svc.dailyRate,
         minStockQuantity: 0,
       },
     });
@@ -714,6 +718,7 @@ async function seedSchoolTenant(tenantId: string) {
         sku: 'TERM1-FEE',
         defaultUomId: term.id,
         category: 'Fees',
+        defaultPrice: 15000,
         minStockQuantity: 0,
       },
     }),
@@ -724,6 +729,7 @@ async function seedSchoolTenant(tenantId: string) {
         sku: 'TERM2-FEE',
         defaultUomId: term.id,
         category: 'Fees',
+        defaultPrice: 16000,
         minStockQuantity: 0,
       },
     }),
@@ -734,6 +740,7 @@ async function seedSchoolTenant(tenantId: string) {
         sku: 'TERM3-FEE',
         defaultUomId: term.id,
         category: 'Fees',
+        defaultPrice: 16000,
         minStockQuantity: 0,
       },
     }),
@@ -977,6 +984,7 @@ async function seedAgrovetTenant(tenantId: string) {
       sku: 'TICK-GREASE-250',
       defaultUomId: piece.id,
       category: 'Vet',
+      defaultPrice: 250,
       minStockQuantity: 5,
     },
   });
@@ -988,6 +996,7 @@ async function seedAgrovetTenant(tenantId: string) {
       sku: 'DAP-50KG',
       defaultUomId: kilogram.id,
       category: 'Fertilizer',
+      defaultPrice: 80,
       minStockQuantity: 10,
     },
   });
@@ -999,6 +1008,7 @@ async function seedAgrovetTenant(tenantId: string) {
       sku: 'COW-SALT-2KG',
       defaultUomId: kilogram.id,
       category: 'Supplement',
+      defaultPrice: 60,
       minStockQuantity: 10,
     },
   });
@@ -1255,6 +1265,7 @@ async function seedManufacturingTenant(tenantId: string) {
       sku: 'LEG-MAHOGANY',
       defaultUomId: piece.id,
       category: 'Component',
+      defaultPrice: 800,
       minStockQuantity: 50,
     },
   });
@@ -1266,6 +1277,7 @@ async function seedManufacturingTenant(tenantId: string) {
       sku: 'TOP-MAHOGANY',
       defaultUomId: piece.id,
       category: 'Component',
+      defaultPrice: 3500,
       minStockQuantity: 20,
     },
   });
@@ -1277,6 +1289,7 @@ async function seedManufacturingTenant(tenantId: string) {
       sku: 'TABLE-MAHOGANY-4S',
       defaultUomId: set.id,
       category: 'FinishedGood',
+      defaultPrice: 45000,
       minStockQuantity: 10,
     },
   });
@@ -1474,6 +1487,7 @@ async function seedConstructionTenant(tenantId: string) {
       sku: 'CEM-50KG',
       defaultUomId: bag.id,
       category: 'Material',
+      defaultPrice: 750,
       minStockQuantity: 200,
     },
   });
@@ -1485,6 +1499,7 @@ async function seedConstructionTenant(tenantId: string) {
       sku: 'STEEL-TON',
       defaultUomId: ton.id,
       category: 'Material',
+      defaultPrice: 120000,
       minStockQuantity: 20,
     },
   });
@@ -1496,6 +1511,7 @@ async function seedConstructionTenant(tenantId: string) {
       sku: 'SAND-TON',
       defaultUomId: ton.id,
       category: 'Material',
+      defaultPrice: 3500,
       minStockQuantity: 30,
     },
   });
@@ -1507,6 +1523,7 @@ async function seedConstructionTenant(tenantId: string) {
       sku: 'LABOUR-DAY',
       defaultUomId: day.id,
       category: 'Service',
+      defaultPrice: 8000,
       minStockQuantity: 0,
     },
   });

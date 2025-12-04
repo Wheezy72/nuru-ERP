@@ -774,6 +774,7 @@ export class DashboardService {
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: this.tenantId,
+        isTraining: false,
         status: {
           not: 'Draft',
         },

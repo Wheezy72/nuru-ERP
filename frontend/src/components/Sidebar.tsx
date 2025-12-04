@@ -140,6 +140,12 @@ const navItems: NavItem[] = [
     group: 'Settings',
     roles: ['ADMIN'],
   },
+  {
+    label: 'Coupons',
+    path: '/settings/coupons',
+    group: 'Settings',
+    roles: ['ADMIN'],
+  },
 ];
 
 const groups: NavItem['group'][] = [

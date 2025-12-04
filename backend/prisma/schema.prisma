@@ -58,6 +58,10 @@ model Tenant {
   assets               Asset[]
   depreciationRuns     DepreciationRun[]
   idempotencyKeys      IdempotencyKey[]
+  priceLists           PriceList[]
+  priceListItems       PriceListItem[]
+  coupons              Coupon[]
+  couponRedemptions    CouponRedemption[]
 }
 
 
@@ -134,6 +138,7 @@ model Product {
   description      String?
   defaultUomId     String          @db.Uuid
   category         String?
+  defaultPrice     Decimal         @default(0)
   isActive         Boolean         @default(true)
   minStockQuantity Decimal?        @default(0)
   createdAt        DateTime        @default(now())
@@ -188,22 +193,19 @@ model StockQuant {
 }
 
 model Customer {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @db.Uuid
-  name      String
-  phone     String?
-  email     String?
-  kraPin    String?  // KRA PIN for compliance (optional)
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String
+  phone       String?
+  email       String?
+  kraPin      String?  // KRA PIN for compliance (optional)
   loyaltyPoints Decimal @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  priceListId String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  invoices Invoice[]
-
-  @@index([tenantId])
-}
-
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  invoices   
 model Invoice {
   id           String        @id @default(uuid()) @db.Uuid
   tenantId     String        @db.Uuid
@@ -224,6 +226,7 @@ model Invoice {
   items        InvoiceItem[]
   transactions Transaction[]
   glJournalEntries GLJournalEntry[]
+  couponRedemptions CouponRedemption[]
 
   @@index([tenantId])
   @@index([tenantId, projectId])
@@ -834,4 +837,73 @@ model IdempotencyKey {
 
   @@index([tenantId])
   @@unique([key, tenantId])
+}
+
+model PriceList {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  code      String
+  name      String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  items     PriceListItem[]
+  customers Customer[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model PriceListItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  priceListId String   @db.Uuid
+  productId   String   @db.Uuid
+  unitPrice   Decimal
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  priceList   PriceList @relation(fields: [priceListId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, priceListId, productId])
+}
+
+model Coupon {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  code          String
+  description   String?
+  percentageOff Decimal? // 0.0–1.0
+  amountOff     Decimal?
+  active        Boolean  @default(true)
+  validFrom     DateTime?
+  validTo       DateTime?
+  maxUses       Int?
+  usedCount     Int      @default(0)
+  minSubtotal   Decimal? @default(0)
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  redemptions   CouponRedemption[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model CouponRedemption {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  couponId  String   @db.Uuid
+  invoiceId String   @db.Uuid
+  discount  Decimal
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  coupon    Coupon   @relation(fields: [couponId], references: [id])
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, invoiceId])
 }
