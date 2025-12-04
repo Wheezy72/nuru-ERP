@@ -875,6 +875,7 @@ export class DashboardService {
       stockVariances,
       voidLikeDiscounts,
       trainingInvoices,
+      shiftVariances,
     ] = await Promise.all([
       prisma.systemLog.count({
         where: {
@@ -912,6 +913,15 @@ export class DashboardService {
           },
         },
       }),
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'SHIFT_VARIANCE',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
     ]);
 
     const anomalyFactors: { label: string; weight: number; count: number }[] = [
@@ -919,6 +929,7 @@ export class DashboardService {
       { label: 'stockVariances', weight: 3, count: stockVariances },
       { label: 'voidLikeDiscounts', weight: 1, count: voidLikeDiscounts },
       { label: 'trainingInvoices', weight: 1, count: trainingInvoices },
+      { label: 'shiftVariances', weight: 3, count: shiftVariances },
     ];
 
     let rawScore = 0;
@@ -937,6 +948,7 @@ export class DashboardService {
       stockVariances,
       voidLikeDiscounts,
       trainingInvoices,
+      shiftVariances,
     };
   }
 
