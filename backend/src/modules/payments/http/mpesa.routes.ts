@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { MpesaService } from '../../../shared/mpesa/MpesaService';
-import { requireAuth } from '../../../shared/middleware/requireRole';
+import { MpesaReconciliationService } from '../../../shared/mpesa/MpesaReconciliationService';
+import { requireAuth, requireRole } from '../../../shared/middleware/requireRole';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 
 const router = Router();
@@ -52,7 +53,7 @@ router.post('/callback', async (req, res, next) => {
     if (!tenantId || !invoiceId) {
       // eslint-disable-next-line no-console
       console.error(
-        'Missing tenantId or invoiceId on M-Pesa callback. Check MPESA_CALLBACK_URL configuration.'
+        'Missing tenantId or invoiceId on M-Pesa callback. Check MPESA_CALLBACK_URL configuration.',
       );
       return res.status(400).json({ message: 'Invalid callback context' });
     }
@@ -117,5 +118,56 @@ router.post('/callback', async (req, res, next) => {
     next(err);
   }
 });
+
+// Bulk reconciliation from M-Pesa CSV or structured rows (authenticated, admin)
+router.post(
+  '/reconcile',
+  requireAuth,
+  requireRole(['ADMIN']),
+  async (req, res, next) => {
+    try {
+      const user = (req as any).user as { tenantId?: string } | undefined;
+      if (!user?.tenantId) {
+        return res.status(400).json({ message: 'Tenant context is missing' });
+      }
+
+      const { csv, rows } = req.body as {
+        csv?: string;
+        rows?: {
+          transactionId: string;
+          amount: number;
+          accountReference?: string;
+          msisdn?: string;
+          timestamp?: string;
+        }[];
+      };
+
+      let parsedRows: {
+        transactionId: string;
+        amount: number;
+        accountReference?: string;
+        msisdn?: string;
+        timestamp?: string;
+      }[] = [];
+
+      if (Array.isArray(rows) && rows.length > 0) {
+        parsedRows = rows;
+      } else if (typeof csv === 'string' && csv.trim().length > 0) {
+        parsedRows = MpesaReconciliationService.parseCsv(csv);
+      } else {
+        return res.status(400).json({
+          message: 'Provide either csv (string) or rows (array) in request body',
+        });
+      }
+
+      const service = new MpesaReconciliationService(user.tenantId);
+      const result = await service.reconcileRows(parsedRows);
+
+      res.json({ items: result });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 export default router;
