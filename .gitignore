@@ -1,0 +1,93 @@
+# -----------------------
+# OS / Editor junk
+# -----------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -----------------------
+# Node / Dependencies
+# -----------------------
+node_modules/
+**/node_modules/
+
+# Package manager caches
+.npm/
+.yarn/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# -----------------------
+# Build artifacts
+# -----------------------
+dist/
+build/
+out/
+coverage/
+.nyc_output/
+.tmp/
+temp/
+tmp/
+
+# Frontend builds
+frontend/dist/
+frontend/build/
+
+# Backend builds
+backend/dist/
+
+# -----------------------
+# Logs
+# -----------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log
+
+# -----------------------
+# Environment / secrets
+# -----------------------
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Prisma local artifacts
+# (Keep migrations/ in git; ignore transient DBs)
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+
+# -----------------------
+# Test & coverage
+# -----------------------
+coverage/
+*.lcov
+.jest/
+jest-cache/
+jest-stare/
+
+# Vitest / Vite
+vite.config.local.*
+*.tsbuildinfo
+
+# -----------------------
+# Misc tools
+# -----------------------
+.cache/
+.parcel-cache/
+.eslintcache
+.prettier-cache/
+storybook-static/
+.cypress/
+playwright-report/
