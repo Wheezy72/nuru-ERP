@@ -16,10 +16,11 @@ type ImportType = 'customers' | 'products';
 
 export function ImportPage() {
   const [importType, setImportType] = React.useState<ImportType>('customers');
-  const [csvText, setCsvText] = React.useState('');
   const [dryRun, setDryRun] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [result, setResult] = React.useState<ImportResult | null>(null);
+  const [headers, setHeaders] = React.useState<string[]>([]);
+  const [rows, setRows] = React.useState<Record<string, string>[]>([]);
 
   const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = async (
     e,
@@ -27,12 +28,36 @@ export function ImportPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    setCsvText(text);
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length < 2) {
+      alert('CSV file must have a header row and at least one data row.');
+      setHeaders([]);
+      setRows([]);
+      setResult(null);
+      return;
+    }
+
+    const headerRow = lines[0].split(',').map((h) => h.trim());
+    const dataRows: Record<string, string>[] = lines.slice(1).map((line) => {
+      const cols = line.split(',');
+      const row: Record<string, string> = {};
+      headerRow.forEach((h, idx) => {
+        row[h] = (cols[idx] ?? '').trim();
+      });
+      return row;
+    });
+
+    setHeaders(headerRow);
+    setRows(dataRows);
     setResult(null);
   };
 
   const handleSubmit = async () => {
-    if (!csvText.trim()) {
+    if (!rows.length) {
       alert('Select a CSV file first.');
       return;
     }
@@ -42,7 +67,7 @@ export function ImportPage() {
       const endpoint =
         importType === 'customers' ? '/import/customers' : '/import/products';
       const res = await apiClient.post<ImportResult>(endpoint, {
-        csv: csvText,
+        rows,
         dryRun,
       });
       setResult(res.data);
@@ -62,6 +87,18 @@ export function ImportPage() {
       ? 'name,phone,email,kraPin'
       : 'name,sku,category,defaultUom,defaultPrice,minStockQuantity';
 
+  const errorsByIndex: Record<number, string[]> = {};
+  if (result?.errors?.length) {
+    for (const err of result.errors) {
+      if (!errorsByIndex[err.index]) {
+        errorsByIndex[err.index] = [];
+      }
+      errorsByIndex[err.index].push(err.message);
+    }
+  }
+
+  const visibleRows = rows.slice(0, 200);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -70,7 +107,7 @@ export function ImportPage() {
             Import Data
           </h1>
           <p className="text-xs text-muted-foreground">
-            Paste or upload a simple CSV file to bulk-create or update records.
+            Upload a CSV, fix any red rows inline, then import in one go.
           </p>
         </div>
       </div>
@@ -84,9 +121,10 @@ export function ImportPage() {
             <select
               className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
               value={importType}
-              onChange={(e) =>
-                setImportType(e.target.value as ImportType)
-              }
+              onChange={(e) => {
+                setImportType(e.target.value as ImportType);
+                setResult(null);
+              }}
             >
               <option value="customers">Customers / Students</option>
               <option value="products">Products / Fees</option>
@@ -121,7 +159,7 @@ export function ImportPage() {
           <Button
             size="sm"
             variant="outline"
-            disabled={isSubmitting || !csvText.trim()}
+            disabled={isSubmitting || !rows.length}
             onClick={handleSubmit}
           >
             {isSubmitting
@@ -144,17 +182,81 @@ export function ImportPage() {
               <span>Errors: {result.errors.length}</span>
             </div>
             {result.errors.length > 0 && (
-              <div className="mt-2 max-h-48 overflow-auto rounded-md bg-muted px-2 py-2">
-                {result.errors.slice(0, 50).map((err, idx) => (
-                  <div key={`${err.index}-${idx}`}>
-                    Row {err.index + 2}: {err.message}
-                  </div>
-                ))}
-                {result.errors.length > 50 && (
-                  <div className="mt-1 text-muted-foreground">
-                    + {result.errors.length - 50} more...
-                  </div>
-                )}
+              <p className="text-[0.65rem] text-rose-700">
+                Fix the highlighted rows below, then run again with dry run
+                disabled to apply changes.
+              </p>
+            )}
+          </div>
+        )}
+
+        {headers.length > 0 && visibleRows.length > 0 && (
+          <div className="mt-3 max-h-80 overflow-auto rounded-md border border-border bg-background">
+            <table className="w-full border-collapse text-[0.7rem]">
+              <thead className="sticky top-0 bg-muted/70">
+                <tr>
+                  <th className="border-b border-border px-2 py-1 text-left">
+                    #
+                  </th>
+                  {headers.map((h) => (
+                    <th
+                      key={h}
+                      className="border-b border-border px-2 py-1 text-left"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                  <th className="border-b border-border px-2 py-1 text-left">
+                    Errors
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row, rowIndex) => {
+                  const globalIndex = rowIndex;
+                  const rowErrors = errorsByIndex[globalIndex] || [];
+                  const hasError = rowErrors.length > 0;
+                  return (
+                    <tr
+                      key={globalIndex}
+                      className={
+                        hasError ? 'bg-rose-50 border-b border-rose-100' : 'border-b border-border/40'
+                      }
+                    >
+                      <td className="px-2 py-1 align-top">
+                        {globalIndex + 2}
+                      </td>
+                      {headers.map((h) => (
+                        <td key={h} className="px-2 py-1 align-top">
+                          <Input
+                            value={row[h] ?? ''}
+                            onChange={(e) =>
+                              setRows((prev) => {
+                                const next = [...prev];
+                                next[globalIndex] = {
+                                  ...next[globalIndex],
+                                  [h]: e.target.value,
+                                };
+                                return next;
+                              })
+                            }
+                            className="h-7 text-[0.7rem]"
+                          />
+                        </td>
+                      ))}
+                      <td className="px-2 py-1 align-top text-rose-700">
+                        {rowErrors.map((msg, i) => (
+                          <div key={i}>{msg}</div>
+                        ))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {rows.length > visibleRows.length && (
+              <div className="border-t border-border px-2 py-1 text-[0.65rem] text-muted-foreground">
+                Showing first {visibleRows.length} rows out of {rows.length}.
               </div>
             )}
           </div>
