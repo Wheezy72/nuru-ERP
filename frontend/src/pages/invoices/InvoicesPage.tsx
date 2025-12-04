@@ -22,6 +22,7 @@ type Invoice = {
   status: string;
   issueDate: string;
   totalAmount: string;
+  taxStatus?: string | null;
   customer: Customer;
 };
 
@@ -100,6 +101,37 @@ export function InvoicesPage() {
       accessorKey: 'totalAmount',
       header: 'Total',
       cell: ({ getValue }) => getValue<string>(),
+    },
+    {
+      id: 'taxStatus',
+      header: 'Tax',
+      cell: ({ row }) => {
+        const invoice = row.original;
+        if (!invoice.taxStatus) {
+          return (
+            <span className="text-[0.7rem] text-muted-foreground">
+              —
+            </span>
+          );
+        }
+        const label =
+          invoice.taxStatus === 'SENT'
+            ? 'Signed'
+            : invoice.taxStatus === 'PENDING'
+            ? 'Pending'
+            : 'Failed';
+        const cls =
+          invoice.taxStatus === 'SENT'
+            ? 'text-emerald-700'
+            : invoice.taxStatus === 'PENDING'
+            ? 'text-amber-700'
+            : 'text-rose-700';
+        return (
+          <span className={`text-[0.7rem] ${cls}`}>
+            {label}
+          </span>
+        );
+      },
     },
     { accessorKey: 'status', header: 'Status' },
     {

@@ -29,6 +29,7 @@ model Tenant {
   stockQuants         StockQuant[]
   customers           Customer[]
   invoices            Invoice[]
+  taxQueueEntries     TaxQueueEntry[]
   transactions        Transaction[]
   members             Member[]
   accounts            Account[]
@@ -232,6 +233,8 @@ model Invoice {
   transactions Transaction[]
   glJournalEntries GLJournalEntry[]
   couponRedemptions CouponRedemption[]
+  taxQueueEntries TaxQueueEntry[]
+  tripInvoices     TripInvoice[]
 
   @@index([tenantId])
   @@index([tenantId, projectId])
@@ -624,6 +627,23 @@ model TaxQueueEntry {
   @@index([tenantId])
   @@index([tenantId, status])
   @@unique([tenantId, invoiceId])
+}
+
+model TripInvoice {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tripId    String   @db.Uuid
+  invoiceId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  trip     Trip     @relation(fields: [tripId], references: [id])
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, tripId])
+  @@index([tenantId, invoiceId])
+  @@unique([tenantId, tripId, invoiceId])
 }
 
 model Project {

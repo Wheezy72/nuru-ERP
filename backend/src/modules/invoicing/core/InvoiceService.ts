@@ -52,13 +52,22 @@ export class InvoiceService {
         skip,
         take: pageSize,
         orderBy: { issueDate: 'desc' },
-        include: { customer: true },
+        include: { customer: true, taxQueueEntries: true },
       }),
       prisma.invoice.count({ where }),
     ]);
 
+    const itemsWithTaxStatus = items.map((inv) => {
+      const entry = inv.taxQueueEntries?.[0];
+      const taxStatus = entry?.status ?? null;
+      return {
+        ...inv,
+        taxStatus,
+      };
+    });
+
     return {
-      items,
+      items: itemsWithTaxStatus,
       page,
       pageSize,
       total,

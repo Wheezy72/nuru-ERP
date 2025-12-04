@@ -119,4 +119,26 @@ router.post('/gate-passes/:id/scan-out', async (req, res, next) => {
   }
 });
 
+/**
+ * Attach one or more invoices to a trip.
+ * Body: { invoiceIds: string[] }
+ */
+router.post('/trips/:id/invoices', async (req, res, next) => {
+  try {
+    const user = getTenantAndUser(req);
+    const service = new LogisticsService(user.tenantId);
+    const { id } = req.params;
+    const { invoiceIds } = req.body as { invoiceIds?: string[] };
+
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      return res.status(400).json({ message: 'invoiceIds (non-empty array) is required' });
+    }
+
+    await service.attachInvoicesToTrip(id, invoiceIds, user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

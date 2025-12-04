@@ -188,11 +188,101 @@ export class LogisticsService {
         gatePasses: {
           orderBy: { createdAt: 'desc' },
         },
+        tripInvoices: {
+          include: {
+            invoice: {
+              select: {
+                id: true,
+                invoiceNo: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
       take: 100,
     });
 
     return trips;
+  }
+
+  /**
+   * Attach one or more invoices to a trip. Ensures all invoices belong to this
+   * tenant and are not Draft. Idempotent per (tenantId, tripId, invoiceId).
+   */
+  async attachInvoicesToTrip(tripId: string, invoiceIds: string[], userId?: string | null) {
+    const prisma = this.prisma;
+
+    if (!invoiceIds.length) {
+      throw new Error('At least one invoiceId is required');
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const trip = await tx.trip.findFirst({
+        where: {
+          id: tripId,
+          tenantId: this.tenantId,
+        },
+      });
+
+      if (!trip) {
+        throw new Error('Trip not found');
+      }
+
+      const invoices = await tx.invoice.findMany({
+        where: {
+          tenantId: this.tenantId,
+          id: { in: invoiceIds },
+        },
+        select: {
+          id: true,
+          invoiceNo: true,
+          status: true,
+        },
+      });
+
+      if (!invoices.length) {
+        throw new Error('No invoices found for attachment');
+      }
+
+      const invalid = invoices.filter((inv) => inv.status === 'Draft');
+      if (invalid.length) {
+        throw new Error('Draft invoices cannot be attached to trips');
+      }
+
+      for (const inv of invoices) {
+        await tx.tripInvoice.upsert({
+          where: {
+            tenantId_tripId_invoiceId: {
+              tenantId: this.tenantId,
+              tripId: trip.id,
+              invoiceId: inv.id,
+            },
+          },
+          update: {},
+          create: {
+            tenantId: this.tenantId,
+            tripId: trip.id,
+            invoiceId: inv.id,
+          },
+        });
+
+        await tx.systemLog.create({
+          data: {
+            tenantId: this.tenantId,
+            userId: userId ?? null,
+            action: 'TRIP_INVOICE_ATTACHED',
+            entityType: 'Trip',
+            entityId: trip.id,
+            metadata: {
+              tripCode: trip.code,
+              invoiceId: inv.id,
+              invoiceNo: inv.invoiceNo,
+            },
+          },
+        });
+      }
+    });
   }
 
   async issueGatePass(gatePassId: string, userId?: string | null) {

@@ -18,6 +18,14 @@ type GatePassDto = {
   toLocationId: string;
 };
 
+type TripInvoiceDto = {
+  invoice: {
+    id: string;
+    invoiceNo: string;
+    status: string;
+  };
+};
+
 type TripDto = {
   id: string;
   code: string;
@@ -25,6 +33,7 @@ type TripDto = {
   plannedDate: string;
   vehicle: VehicleDto;
   gatePasses: GatePassDto[];
+  tripInvoices?: TripInvoiceDto[];
 };
 
 type TripsResponse = {
@@ -237,7 +246,7 @@ export function TripsPage() {
                       Vehicle
                     </th>
                     <th className="border-b border-border px-2 py-1 text-left">
-                      Status
+                      Invoices
                     </th>
                     <th className="border-b border-border px-2 py-1 text-left">
                       Gate Pass
@@ -250,6 +259,7 @@ export function TripsPage() {
                 <tbody>
                   {trips.map((trip) => {
                     const gate = trip.gatePasses[0];
+                    const invoices = trip.tripInvoices ?? [];
                     return (
                       <tr key={trip.id} className="border-b border-border/50">
                         <td className="px-2 py-1 align-top">
@@ -259,6 +269,12 @@ export function TripsPage() {
                           <div className="text-[0.65rem] text-muted-foreground">
                             Planned:{' '}
                             {new Date(trip.plannedDate).toLocaleDateString()}
+                          </div>
+                          <div className="mt-1 text-[0.65rem] text-muted-foreground">
+                            Status:{' '}
+                            <span className="inline-flex rounded-full bg-muted px-2 py-0.5 capitalize">
+                              {trip.status.toLowerCase()}
+                            </span>
                           </div>
                         </td>
                         <td className="px-2 py-1 align-top">
@@ -272,9 +288,33 @@ export function TripsPage() {
                           )}
                         </td>
                         <td className="px-2 py-1 align-top">
-                          <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[0.65rem] capitalize">
-                            {trip.status.toLowerCase()}
-                          </span>
+                          {invoices.length === 0 ? (
+                            <span className="text-[0.65rem] text-muted-foreground">
+                              No invoices attached
+                            </span>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="text-[0.65rem] text-muted-foreground">
+                                {invoices.length} invoice
+                                {invoices.length > 1 ? 's' : ''}
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {invoices.slice(0, 3).map((ti) => (
+                                  <span
+                                    key={ti.invoice.id}
+                                    className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.65rem]"
+                                  >
+                                    {ti.invoice.invoiceNo}
+                                  </span>
+                                ))}
+                                {invoices.length > 3 && (
+                                  <span className="text-[0.65rem] text-muted-foreground">
+                                    +{invoices.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-1 align-top">
                           {gate ? (
@@ -292,7 +332,7 @@ export function TripsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-1 align-top text-right">
+                        <td className="px-2 py-1 align-top text-right space-y-1">
                           {gate && gate.status === 'DRAFT' && (
                             <Button
                               size="sm"
