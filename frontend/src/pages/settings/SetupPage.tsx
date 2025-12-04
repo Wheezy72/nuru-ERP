@@ -119,6 +119,16 @@ export function SetupPage() {
       ? cashierVisibility.canViewDailyTotals
       : false;
 
+  const whatsappSettings = (features && (features.whatsapp as any)) || {};
+  const enablePaymentReceipts =
+    typeof whatsappSettings.enablePaymentReceipts === 'boolean'
+      ? whatsappSettings.enablePaymentReceipts
+      : true;
+  const enableRiskAlerts =
+    typeof whatsappSettings.enableRiskAlerts === 'boolean'
+      ? whatsappSettings.enableRiskAlerts
+      : false;
+
   const handleModeChange = (nextMode: 'SIMPLE' | 'FULL') => {
     const patch: Partial<TenantFeatures> = { mode: nextMode };
     updateFeatures.mutate(patch);
@@ -174,19 +184,19 @@ export function SetupPage() {
         </div>
       </div>
 
-      {/* Display & Role Settings */}
+      {/* Display, Permissions & Alerts */}
       <Card className="p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div>
             <div className="text-[0.8rem] font-semibold text-foreground">
-              Display & Permissions
+              Display, Permissions & Alerts
             </div>
             <div className="text-[0.7rem] text-muted-foreground">
-              Choose Simple vs Full mode and what your cashier can see.
+              Choose Simple vs Full mode, cashier visibility, and WhatsApp alerts.
             </div>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 text-xs">
+        <div className="grid gap-4 md:grid-cols-3 text-xs">
           <div className="space-y-2">
             <div className="text-[0.75rem] font-semibold text-foreground">
               Interface mode
@@ -207,7 +217,7 @@ export function SetupPage() {
                 Full (team / accountant)
               </Button>
             </div>
-            <p className="text-[0.7rem] text-muted-foreground mt-1">
+            <p className="mt-1 text-[0.7rem] text-muted-foreground">
               Simple mode hides advanced modules (Maker, Planner, Banking, Settings)
               for non-admin roles.
             </p>
@@ -225,10 +235,43 @@ export function SetupPage() {
                 Allow cashiers to see today&apos;s total sales and cash on the dashboard
               </span>
             </label>
-            <p className="text-[0.7rem] text-muted-foreground mt-1">
+            <p className="mt-1 text-[0.7rem] text-muted-foreground">
               Turn this off if you prefer cashiers to focus on their till only, while
               managers/admins see overall performance.
             </p>
+          </div>
+          <div className="space-y-2">
+            <div className="text-[0.75rem] font-semibold text-foreground">
+              WhatsApp alerts
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-[0.7rem] text-muted-foreground">
+              <Checkbox
+                checked={enablePaymentReceipts}
+                onCheckedChange={() =>
+                  updateFeatures.mutate({
+                    whatsapp: {
+                      ...whatsappSettings,
+                      enablePaymentReceipts: !enablePaymentReceipts,
+                    },
+                  })
+                }
+              />
+              <span>Send WhatsApp receipts after payments (M-Pesa, card, manual)</span>
+            </label>
+            <label className="mt-1 flex cursor-pointer items-center gap-2 text-[0.7rem] text-muted-foreground">
+              <Checkbox
+                checked={enableRiskAlerts}
+                onCheckedChange={() =>
+                  updateFeatures.mutate({
+                    whatsapp: {
+                      ...whatsappSettings,
+                      enableRiskAlerts: !enableRiskAlerts,
+                    },
+                  })
+                }
+              />
+              <span>Send a short risk alert to admins when the Nuru Score drops</span>
+            </label>
           </div>
         </div>
       </Card>

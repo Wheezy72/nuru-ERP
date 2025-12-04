@@ -2,6 +2,7 @@ import { Prisma, TaxRate } from '@prisma/client';
 import { createTenantPrismaClient } from '../../../shared/prisma/client';
 import { getRedisClient } from '../../../shared/cache/redisClient';
 import { computeTaxBreakdown } from '../../invoicing/core/taxMath';
+import { WhatsAppService } from '../../../shared/whatsapp/WhatsAppService';
 
 type DateRange = {
   startDate?: Date;
@@ -84,6 +85,12 @@ export class DashboardService {
     if (redis) {
       await redis.setex(cacheKey, 60 * 5, JSON.stringify(summary));
     }
+
+    // Optionally send a short WhatsApp risk alert to admins if the score dropped.
+    this.maybeSendRiskAlert(risk).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send risk alert', err);
+    });
 
     return summary;
   }
@@ -931,5 +938,46 @@ export class DashboardService {
       voidLikeDiscounts,
       trainingInvoices,
     };
+  }
+
+  /**
+   * If risk alerts are enabled, send a short WhatsApp alert to all admin phones
+   * when the Nuru Score drops below a soft threshold.
+   */
+  private async maybeSendRiskAlert(risk: {
+    nuruScore: number;
+    windowDays: number;
+  }) {
+    // Only alert when score is clearly deteriorating
+    if (risk.nuruScore >= 70) {
+      return;
+    }
+
+    const prisma = this.prisma;
+
+    const admins = await prisma.user.findMany({
+      where: {
+        tenantId: this.tenantId,
+        role: 'ADMIN',
+        phone: { not: null },
+      },
+      select: {
+        phone: true,
+      },
+    });
+
+    const phones = admins
+      .map((u) => u.phone)
+      .filter((p): p is string => Boolean(p));
+
+    if (phones.length === 0) {
+      return;
+    }
+
+    const whatsapp = new WhatsAppService(this.tenantId);
+    await whatsapp.sendRiskAlertToAdminPhones(phones, {
+      nuruScore: risk.nuruScore,
+      windowDays: risk.windowDays,
+    });
   }
 }

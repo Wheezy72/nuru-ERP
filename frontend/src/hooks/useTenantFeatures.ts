@@ -20,6 +20,11 @@ export type TenantFeatures = {
     MANAGER?: RoleVisibility;
     CASHIER?: RoleVisibility;
   };
+  // WhatsApp + risk feature flags (stored in Tenant.features JSON)
+  whatsapp?: {
+    enablePaymentReceipts?: boolean;
+    enableRiskAlerts?: boolean;
+  };
   [key: string]: unknown;
 };
 
