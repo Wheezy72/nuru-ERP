@@ -10,6 +10,7 @@ import { InvoiceDetailPage } from '@/pages/invoices/InvoiceDetailPage';
 import { MembersPage } from '@/pages/chama/MembersPage';
 import { AuditLogPage } from '@/pages/settings/AuditLogPage';
 import { CouponsPage } from '@/pages/settings/CouponsPage';
+import { ImportPage } from '@/pages/settings/ImportPage';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { PosPage } from '@/pages/pos/PosPage';
 import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
@@ -45,6 +46,7 @@ export function App() {
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/settings/audit-log" element={<AuditLogPage />} />
           <Route path="/settings/coupons" element={<CouponsPage />} />
+          <Route path="/settings/import" element={<ImportPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

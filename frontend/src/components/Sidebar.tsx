@@ -135,6 +135,12 @@ const navItems: NavItem[] = [
     roles: ['ADMIN'],
   },
   {
+    label: 'Import Data',
+    path: '/settings/import',
+    group: 'Settings',
+    roles: ['ADMIN'],
+  },
+  {
     label: 'Audit Log',
     path: '/settings/audit-log',
     group: 'Settings',
