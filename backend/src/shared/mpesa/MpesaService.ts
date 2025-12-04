@@ -215,6 +215,7 @@ export class MpesaService {
         accountId: null,
         amount: paymentAmount,
         type: 'Credit',
+        paymentMethod: 'MPESA',
         reference: mpesaReceipt || `M-Pesa payment for ${invoice.invoiceNo}`,
       },
     });

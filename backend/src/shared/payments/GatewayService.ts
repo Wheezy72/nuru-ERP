@@ -192,16 +192,17 @@ export class GatewayService {
 
     if (paymentAmount.gt(0)) {
       await prisma.transaction.create({
-        data: {
-          tenantId: this.tenantId,
-          invoiceId: invoice.id,
-          accountId: null,
-          amount: paymentAmount,
-          type: 'Credit',
-          reference:
-            gatewayRef || `Card payment for ${invoice.invoiceNo}`,
-        },
-      });
+      data: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        accountId: null,
+        amount: paymentAmount,
+        type: 'Credit',
+        paymentMethod: 'CARD',
+        reference:
+          gatewayRef || `Gateway payment for ${invoice.invoiceNo}`,
+      },
+    });
     }
 
     await prisma.systemLog.create({

@@ -80,6 +80,7 @@ type RiskSignals = {
   stockVariances: number;
   voidLikeDiscounts: number;
   trainingInvoices: number;
+  shiftVariances?: number;
 };
 
 type DashboardSummary = {
@@ -364,7 +365,11 @@ export function DashboardPage() {
                     Manual: {summary.risk.manualPayments.toLocaleString()}
                   </span>
                   <span>
-                    Variances: {summary.risk.stockVariances.toLocaleString()}
+                    Stock var: {summary.risk.stockVariances.toLocaleString()}
+                  </span>
+                  <span>
+                    Shift var:{' '}
+                    {(summary.risk.shiftVariances ?? 0).toLocaleString()}
                   </span>
                   <span>
                     Coupons: {summary.risk.voidLikeDiscounts.toLocaleString()}
@@ -374,8 +379,8 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            100 = very clean. Drops as manual overrides, variances, and heavy
-            discounts increase.
+            100 = very clean. Drops as manual overrides, stock/shift variances,
+            and heavy discounts increase.
           </div>
         </Card>
 

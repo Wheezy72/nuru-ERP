@@ -88,6 +88,7 @@ export class ShiftService {
         where: {
           tenantId: this.tenantId,
           type: 'Credit',
+          paymentMethod: 'CASH',
           createdAt: {
             gte: shift.openedAt,
             lte: now,

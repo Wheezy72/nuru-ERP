@@ -633,6 +633,7 @@ export class InvoiceService {
         accountId: null,
         amount: paymentAmount,
         type: 'Credit',
+        paymentMethod: 'MANUAL',
         reference:
           input.reference ||
           `Manual ${input.method} payment for ${invoice.invoiceNo}`,
