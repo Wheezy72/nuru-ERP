@@ -58,6 +58,7 @@ export class DashboardService {
       insights,
       taxLiability,
       debtors,
+      risk,
     ] = await Promise.all([
       this.getMetrics(prisma, range),
       this.getCashFlow(prisma, range),
@@ -66,6 +67,7 @@ export class DashboardService {
       this.getSmartInsights(prisma),
       this.getTaxLiability(prisma, range),
       this.getDebtors(prisma),
+      this.getRiskSignals(prisma),
     ]);
 
     const summary = {
@@ -76,6 +78,7 @@ export class DashboardService {
       insights,
       taxLiability,
       debtors,
+      risk,
     };
 
     if (redis) {
@@ -846,5 +849,87 @@ export class DashboardService {
     debtors.sort((a, b) => b.balanceDue - a.balanceDue);
 
     return debtors.slice(0, 10);
+  }
+
+  private async getRiskSignals(prisma: ReturnType<typeof this['prisma']>) {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 30,
+      0,
+      0,
+      0,
+      0,
+    );
+
+    const [
+      manualPayments,
+      stockVariances,
+      voidLikeDiscounts,
+      trainingInvoices,
+    ] = await Promise.all([
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'INVOICE_PAID_MANUAL',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'STOCKTAKE_VARIANCE',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.systemLog.count({
+        where: {
+          tenantId: this.tenantId,
+          action: 'COUPON_APPLIED',
+          createdAt: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+      prisma.invoice.count({
+        where: {
+          tenantId: this.tenantId,
+          isTraining: true,
+          issueDate: {
+            gte: thirtyDaysAgo,
+          },
+        },
+      }),
+    ]);
+
+    const anomalyFactors: { label: string; weight: number; count: number }[] = [
+      { label: 'manualPayments', weight: 2, count: manualPayments },
+      { label: 'stockVariances', weight: 3, count: stockVariances },
+      { label: 'voidLikeDiscounts', weight: 1, count: voidLikeDiscounts },
+      { label: 'trainingInvoices', weight: 1, count: trainingInvoices },
+    ];
+
+    let rawScore = 0;
+    for (const f of anomalyFactors) {
+      rawScore += f.count * f.weight;
+    }
+
+    // Simple cap and invert so higher Nuru Score = lower risk
+    const capped = Math.min(rawScore, 100);
+    const nuruScore = 100 - capped; // 0 (high risk) .. 100 (clean)
+
+    return {
+      nuruScore,
+      windowDays: 30,
+      manualPayments,
+      stockVariances,
+      voidLikeDiscounts,
+      trainingInvoices,
+    };
   }
 }

@@ -776,7 +776,7 @@ model SystemLog {
   user       User?    @relation(fields: [userId], references: [id])
 
   @@index([tenantId])
-  @@index([tenantId, entityType])
+  @@index([tenantId, action])
 }
 
 enum EmployeeRole {
