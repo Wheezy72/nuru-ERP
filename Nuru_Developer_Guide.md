@@ -103,6 +103,12 @@ HTTP:
     - Uses `MpesaReconciliationService` to bulk reconcile M‑Pesa statement.
 - `http/gateway.routes.ts`
   - Card/bank initiation + webhook for Pesapal.
+- All payment flows populate `Transaction.paymentMethod`:
+  - M‑Pesa → `MPESA`
+  - Card/bank gateway → `CARD`
+  - Manual external payments → `MANUAL`
+  - Future POS cash payments → `CASH`
+- Shift closing logic uses only `paymentMethod = 'CASH'` credits to compute expected till cash, so M‑Pesa / card do not distort shift variances.
 
 ### 3.4 Dashboard – `backend/src/modules/dashboard`
 
@@ -122,6 +128,7 @@ Core:
       - Counters over last 30 days:
         - `manualPayments` (`INVOICE_PAID_MANUAL` logs).
         - `stockVariances` (`STOCKTAKE_VARIANCE` logs).
+        - `shiftVariances` (`SHIFT_VARIANCE` logs).
         - `voidLikeDiscounts` (`COUPON_APPLIED` logs).
         - `trainingInvoices` (invoices with `isTraining = true`).
   - Most sales/tax/debtor queries explicitly **exclude training invoices**.
@@ -169,6 +176,20 @@ HTTP:
   - `POST /api/import/products`
   - Accept `{ csv, rows, dryRun }`.
   - Uses shared CSV parser to support simple spreadsheet exports.
+
+Frontend:
+
+- `pages/settings/ImportPage.tsx`
+  - CSV is parsed in-browser into `headers` + `rows`.
+  - “Red grid” UI:
+    - Shows up to the first 200 rows in a table.
+    - Rows with backend validation errors are highlighted in red and show error messages.
+    - Each cell is editable; edits update the in-memory `rows`.
+  - Clicking **Validate** (dryRun = true):
+    - Sends `{ rows, dryRun: true }` to `/api/import/*`.
+    - Uses `errors[index]` from the backend to mark problem rows.
+  - Clicking **Import Now** (dryRun = false):
+    - Re-uses the current `rows` state to apply changes.
 
 ### 4.2 M‑Pesa reconciliation
 
