@@ -64,13 +64,11 @@ model Tenant {
   coupons              Coupon[]
   couponRedemptions    CouponRedemption[]
   shifts               Shift[]
-}
-
-
-enum UserRole {
-  ADMIN
-  MANAGER
-  CASHIER
+  vehicles             Vehicle[]
+  trips                Trip[]
+  gatePasses           GatePass[]
+  taxQueueEntries      TaxQueueEntry[]
+  tripInvoices         TripInvoice[]
 }
 
 model User {
