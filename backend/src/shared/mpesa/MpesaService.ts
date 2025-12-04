@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../prisma/client';
 import { LoyaltyService } from '../../modules/customers/core/LoyaltyService';
+import { WhatsAppService } from '../whatsapp/WhatsAppService';
 
 type StkPushParams = {
   amount: number;
@@ -124,17 +125,24 @@ export class MpesaService {
     return data;
   }
 
-  async markInvoicePaid(invoiceId: string, amount: number, mpesaReceipt?: string) {
+  async markInvoicePaid(
+    invoiceId: string,
+    amount: number,
+    mpesaReceipt?: string,
+  ) {
     const prisma = this.prisma;
 
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId: this.tenantId },
+      include: {
+        customer: true,
+      },
     });
 
     if (!invoice) {
       // eslint-disable-next-line no-console
       console.error(
-        `Invoice ${invoiceId} not found for tenant ${this.tenantId} during M-Pesa callback`
+        `Invoice ${invoiceId} not found for tenant ${this.tenantId} during M-Pesa callback`,
       );
       return;
     }
@@ -220,7 +228,7 @@ export class MpesaService {
         entityId: invoice.id,
         metadata: {
           previousStatus: invoice.status,
-          newStatus: newStatus,
+          newStatus,
           amount: paymentAmount,
           totalAmount: totalAmountDecimal,
           alreadyPaid,
@@ -245,6 +253,26 @@ export class MpesaService {
         // eslint-disable-next-line no-console
         console.error('Failed to record GL cash receipt for M-Pesa payment', err);
       }
+    }
+
+    // Fire-and-forget WhatsApp payment receipt; failure should not block callback.
+    try {
+      const customer = invoice.customer;
+      if (customer?.phone) {
+        const whatsapp = new WhatsAppService(this.tenantId);
+        const balanceDecimal = totalAmountDecimal.sub(newPaidTotal);
+        await whatsapp.sendPaymentReceipt(customer.phone, {
+          invoiceNo: invoice.invoiceNo,
+          amountPaid: paymentAmount.toString(),
+          totalAmount: totalAmountDecimal.toString(),
+          balance: balanceDecimal.toString(),
+          method: 'MPESA',
+          customerName: customer.name,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send M-Pesa payment receipt via WhatsApp', err);
     }
 
     return updated;

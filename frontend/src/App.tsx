@@ -11,6 +11,7 @@ import { MembersPage } from '@/pages/chama/MembersPage';
 import { AuditLogPage } from '@/pages/settings/AuditLogPage';
 import { CouponsPage } from '@/pages/settings/CouponsPage';
 import { ImportPage } from '@/pages/settings/ImportPage';
+import { MpesaReconcilePage } from '@/pages/banking/MpesaReconcilePage';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { PosPage } from '@/pages/pos/PosPage';
 import { InventoryLookupPage } from '@/pages/inventory/InventoryLookupPage';
@@ -42,6 +43,7 @@ export function App() {
           <Route path="/accounting/assets" element={<AssetsPage />} />
           <Route path="/payroll/casuals" element={<PayCasualsPage />} />
           <Route path="/chama/members" element={<MembersPage />} />
+          <Route path="/banking/mpesa-reconcile" element={<MpesaReconcilePage />} />
           <Route path="/reporting/tax-details" element={<TaxDetailsPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/settings/audit-log" element={<AuditLogPage />} />

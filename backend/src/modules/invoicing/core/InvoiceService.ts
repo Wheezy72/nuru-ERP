@@ -578,7 +578,7 @@ export class InvoiceService {
       reference?: string;
       paidAt: Date;
       userId?: string | null;
-    }
+    },
   ) {
     const prisma = this.prisma;
 
@@ -588,6 +588,9 @@ export class InvoiceService {
 
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId: this.tenantId },
+      include: {
+        customer: true,
+      },
     });
 
     if (!invoice) {
@@ -609,6 +612,7 @@ export class InvoiceService {
     const paymentAmount = new Prisma.Decimal(input.amount);
     const newPaidTotal = alreadyPaid.add(paymentAmount);
     const totalAmountDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+    const balanceDecimal = totalAmountDecimal.sub(newPaidTotal);
 
     let newStatus = invoice.status;
     if (newPaidTotal.gte(totalAmountDecimal)) {
@@ -671,6 +675,25 @@ export class InvoiceService {
           err,
         );
       }
+    }
+
+    // Fire-and-forget WhatsApp payment receipt for manual entries.
+    try {
+      const customer = invoice.customer;
+      if (customer?.phone) {
+        const whatsapp = new WhatsAppService(this.tenantId);
+        await whatsapp.sendPaymentReceipt(customer.phone, {
+          invoiceNo: invoice.invoiceNo,
+          amountPaid: paymentAmount.toString(),
+          totalAmount: totalAmountDecimal.toString(),
+          balance: balanceDecimal.toString(),
+          method: 'MANUAL',
+          customerName: customer.name,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send manual payment receipt via WhatsApp', err);
     }
 
     return updated;

@@ -16,6 +16,15 @@ type InvoiceWhatsAppPayload = {
   isTraining?: boolean;
 };
 
+type PaymentReceiptPayload = {
+  invoiceNo: string;
+  amountPaid: string;
+  totalAmount: string;
+  balance: string;
+  method: 'MPESA' | 'CARD' | 'MANUAL';
+  customerName: string | null;
+};
+
 export class WhatsAppService {
   private tenantId: string;
 
@@ -114,11 +123,40 @@ export class WhatsAppService {
     await this.sendText(toPhone, body);
   }
 
-  async sendConstitutionUpdate(toPhone: string, payload: {
-    interestRate: string;
-    lateFineAmount: string;
-    maxLoanRatio: string;
-  }) {
+  /**
+   * Send a simple KES payment receipt with amount and new balance.
+   */
+  async sendPaymentReceipt(toPhone: string, payload: PaymentReceiptPayload) {
+    if (!toPhone) {
+      return;
+    }
+
+    const body = [
+      `Hi ${payload.customerName || 'Customer'},`,
+      '',
+      `We have received your payment of ${payload.amountPaid} for Invoice ${payload.invoiceNo}.`,
+      `Method: ${payload.method}`,
+      `Total invoice amount: ${payload.totalAmount}`,
+      `Balance now: ${payload.balance}`,
+      '',
+      'Thank you.',
+      '',
+      `- Nuru (tenant ${this.tenantId})`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    await this.sendText(toPhone, body);
+  }
+
+  async sendConstitutionUpdate(
+    toPhone: string,
+    payload: {
+      interestRate: string;
+      lateFineAmount: string;
+      maxLoanRatio: string;
+    },
+  ) {
     const body = [
       'Chama constitution updated:',
       '',

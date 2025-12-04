@@ -129,6 +129,12 @@ const navItems: NavItem[] = [
     featureFlag: 'enableChama',
   },
   {
+    label: 'M-Pesa Reconcile',
+    path: '/banking/mpesa-reconcile',
+    group: 'Banking',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     label: 'Business Setup',
     path: '/setup',
     group: 'Settings',
