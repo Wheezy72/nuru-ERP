@@ -126,6 +126,8 @@ model Location {
   stockTransfersFrom   StockTransfer[]  @relation("FromLocation")
   stockTransfersTo     StockTransfer[]  @relation("ToLocation")
   productionOrders     ProductionOrder[]
+  gatePassesFrom       GatePass[]       @relation("GateFromLocation")
+  gatePassesTo         GatePass[]       @relation("GateToLocation")
 
   @@index([tenantId])
   @@unique([tenantId, code])
@@ -521,11 +523,105 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  purchaseOrders  PurchaseOrder[]
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  purchaseOrders   PurchaseOrder[]
   supplierInvoices SupplierInvoice[]
 
   @@index([tenantId])
+}
+
+model Vehicle {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  registration    String
+  type            String?
+  driverName      String?
+  driverPhone     String?
+  nextServiceDate DateTime?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  trips           Trip[]
+
+  @@index([tenantId])
+  @@unique([tenantId, registration])
+}
+
+enum TripStatus {
+  PLANNED
+  LOADING
+  DISPATCHED
+  DELIVERED
+  RETURNED
+}
+
+model Trip {
+  id          String      @id @default(uuid()) @db.Uuid
+  tenantId    String      @db.Uuid
+  vehicleId   String      @db.Uuid
+  code        String
+  status      TripStatus  @default(PLANNED)
+  plannedDate DateTime
+  dispatchedAt DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id])
+  gatePasses  GatePass[]
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+enum GatePassStatus {
+  DRAFT
+  ISSUED
+  SCANNED_OUT
+  RETURNED
+}
+
+model GatePass {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid
+  tripId          String         @db.Uuid
+  fromLocationId  String         @db.Uuid
+  toLocationId    String         @db.Uuid
+  status          GatePassStatus @default(DRAFT)
+  code            String
+  createdAt       DateTime       @default(now())
+  issuedAt        DateTime?
+  scannedOutAt    DateTime?
+  returnedAt      DateTime?
+
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  trip            Trip           @relation(fields: [tripId], references: [id])
+  fromLocation    Location       @relation("GateFromLocation", fields: [fromLocationId], references: [id])
+  toLocation      Location       @relation("GateToLocation", fields: [toLocationId], references: [id])
+
+  @@index([tenantId])
+  @@unique([tenantId, code])
+}
+
+model TaxQueueEntry {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  invoiceId  String   @db.Uuid
+  status     String   // PENDING, SENT, FAILED
+  lastError  String?
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@unique([tenantId, invoiceId])
 }
 
 model Project {

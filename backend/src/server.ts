@@ -24,6 +24,7 @@ import procurementRoutes from './modules/procurement/http/procurement.routes';
 import manufacturingRoutes from './modules/manufacturing/http/manufacturing.routes';
 import projectRoutes from './modules/projects/http/project.routes';
 import accountingRoutes from './modules/accounting/http/accounting.routes';
+import taxQueueRoutes from './modules/accounting/http/tax.routes';
 import { prisma as basePrisma } from './shared/prisma/client';
 import { idempotencyMiddleware } from './shared/middleware/idempotency';
 
@@ -101,6 +102,7 @@ app.use('/api/procurement', procurementRoutes);
 app.use('/api/manufacturing', manufacturingRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/accounting', accountingRoutes);
+app.use('/api/tax', taxQueueRoutes);
 
 if (process.env.SENTRY_DSN) {
   app.use(Sentry.Handlers.errorHandler());
