@@ -1761,6 +1761,204 @@ async function seedConstructionTenant(tenantId: string) {
   }
 }
 
+// Seed extra fixtures so that analytics/risk cards light up for demo tenants.
+async function seedRiskAndCouponFixtures(
+  tenantId: string,
+  locationId: string,
+  products: any[],
+) {
+  const now = new Date();
+  const windowStart = new Date(now);
+  windowStart.setDate(now.getDate() - 90);
+
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      tenantId,
+      issueDate: {
+        gte: windowStart,
+      },
+    },
+  });
+
+  if (invoices.length === 0) {
+    return;
+  }
+
+  // Demo coupon used on a subset of invoices so COUPON_APPLIED appears in SystemLog.
+  const coupon = await prisma.coupon.create({
+    data: {
+      tenantId,
+      code: 'FUNDIS10',
+      description: '10% off tools (demo coupon)',
+      percentageOff: 0.1,
+      amountOff: null,
+      active: true,
+      validFrom: windowStart,
+      validTo: now,
+      maxUses: 500,
+      minSubtotal: 500,
+    },
+  });
+
+  const couponTargets = invoices.slice(0, 10);
+  for (const invoice of couponTargets) {
+    const subtotal = Number(invoice.totalAmount || 0);
+    if (!subtotal) continue;
+
+    const discountAmount = Math.round(subtotal * 0.1);
+
+    await prisma.couponRedemption.create({
+      data: {
+        tenantId,
+        couponId: coupon.id,
+        invoiceId: invoice.id,
+        discount: discountAmount,
+      },
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        tenantId,
+        userId: null,
+        action: 'COUPON_APPLIED',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        metadata: {
+          couponCode: coupon.code,
+          discountAmount,
+          seeded: true,
+        },
+      },
+    });
+  }
+
+  // Mark a few invoices as training so trainingInvoices metric is non-zero.
+  const trainingTargets = invoices.slice(0, 5);
+  for (const invoice of trainingTargets) {
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { isTraining: true },
+    });
+  }
+
+  // Create a handful of manual payments with corresponding SystemLog entries.
+  let manualCount = 0;
+  for (const invoice of invoices) {
+    if (manualCount >= 5) break;
+
+    const existingAgg = await prisma.transaction.aggregate({
+      where: {
+        tenantId,
+        invoiceId: invoice.id,
+        type: 'Credit',
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    const alreadyPaid = Number(existingAgg._sum.amount || 0);
+    if (alreadyPaid > 0) {
+      continue;
+    }
+
+    const total = Number(invoice.totalAmount || 0);
+    if (!total) continue;
+
+    const amount = Math.max(1, Math.round(total * 0.4));
+    const newStatus = amount >= total ? 'Paid' : 'Partial';
+
+    await prisma.transaction.create({
+      data: {
+        tenantId,
+        invoiceId: invoice.id,
+        amount,
+        type: 'Credit',
+        reference: `Manual seed payment for ${invoice.invoiceNo}`,
+      },
+    });
+
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: newStatus },
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        tenantId,
+        userId: null,
+        action: 'INVOICE_PAID_MANUAL',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        metadata: {
+          amount,
+          previousStatus: invoice.status,
+          newStatus,
+          seeded: true,
+        },
+      },
+    });
+
+    manualCount += 1;
+  }
+
+  // Create a small blind stocktake variance so STOCKTAKE_VARIANCE appears.
+  const adminUser = await prisma.user.findFirst({
+    where: {
+      tenantId,
+      role: UserRole.ADMIN,
+    },
+  });
+
+  const anyProduct = products[0];
+
+  if (adminUser && anyProduct) {
+    const stockTake = await prisma.stockTake.create({
+      data: {
+        tenantId,
+        locationId,
+        createdByUserId: adminUser.id,
+        status: 'OPEN',
+      },
+    });
+
+    const expectedQuantity = 100;
+    const countedQuantity = 92;
+    const variance = countedQuantity - expectedQuantity;
+
+    const item = await prisma.stockTakeItem.create({
+      data: {
+        tenantId,
+        stockTakeId: stockTake.id,
+        productId: anyProduct.id,
+        expectedQuantity,
+        countedQuantity,
+        variance,
+        status: 'COUNTED',
+      },
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        tenantId,
+        userId: adminUser.id,
+        action: 'STOCKTAKE_VARIANCE',
+        entityType: 'StockTakeItem',
+        entityId: item.id,
+        metadata: {
+          productId: anyProduct.id,
+          locationId,
+          expectedQuantity,
+          countedQuantity,
+          variance,
+          stockTakeId: stockTake.id,
+          seeded: true,
+        },
+      },
+    });
+  }
+}
+
 async function main() {
   console.log('Seeding database with realistic Kenyan data...');
 
@@ -1831,6 +2029,7 @@ async function main() {
   const { products, location } = await seedInventory(nuru.id);
   const customers = await seedCustomers(nuru.id);
   await seedInvoices(nuru.id, location.id, products, customers);
+  await seedRiskAndCouponFixtures(nuru.id, location.id, products);
 
   await seedChama(wamama.id);
   // Fleet / service business seed

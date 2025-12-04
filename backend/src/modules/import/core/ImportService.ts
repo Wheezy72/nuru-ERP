@@ -4,6 +4,8 @@ import { createTenantPrismaClient } from '../../../shared/prisma/client';
 type PrismaClientForTenant = ReturnType<typeof createTenantPrismaClient>;
 
 export class ImportService {
+  // CSV / bulk-import helpers for customers and products.
+  // This keeps mapping and validation in one place so the HTTP layer stays thin.
   private tenantId: string;
 
   constructor(tenantId: string) {

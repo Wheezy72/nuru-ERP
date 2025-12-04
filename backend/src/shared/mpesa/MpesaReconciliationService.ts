@@ -3,10 +3,15 @@ import { createTenantPrismaClient } from '../prisma/client';
 import { MpesaService } from './MpesaService';
 
 export type MpesaReconcileRow = {
+  // M-Pesa receipt / transaction ID (e.g. QF65Z123AB)
   transactionId: string;
+  // Amount received in KES
   amount: number;
+  // Invoice/account reference as sent in the original STK or Paybill payment
   accountReference?: string;
+  // Payer phone number, if present on the statement
   msisdn?: string;
+  // Original transaction timestamp from the statement (unparsed string)
   timestamp?: string;
 };
 
