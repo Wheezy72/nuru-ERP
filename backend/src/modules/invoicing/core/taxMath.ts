@@ -14,7 +14,29 @@ export type TaxBreakdown = {
 };
 
 /**
- * Pure tax math used by InvoiceService.buildKraPayload and unit tests.
+ * Extract VAT from a VAT-inclusive amount.
+ *
+ * Example for 16%:
+ *   base = amount / 1.16
+ *   tax  = amount - base
+ */
+export function extractVatInclusive(
+  amount: Prisma.Decimal,
+  rateDecimal: Prisma.Decimal,
+): { base: Prisma.Decimal; tax: Prisma.Decimal } {
+  const one = new Prisma.Decimal(1);
+  if (rateDecimal.lte(0)) {
+    return { base: amount, tax: new Prisma.Decimal(0) };
+  }
+  const divisor = one.add(rateDecimal);
+  const base = amount.div(divisor);
+  const tax = amount.sub(base);
+  return { base, tax };
+}
+
+/**
+ * Pure tax math used by InvoiceService.buildKraPayload and dashboard tax liability.
+ * Assumes lineTotal is VAT-inclusive for VAT_16 / VAT_8 items.
  */
 export function computeTaxBreakdown(items: TaxItem[]): TaxBreakdown {
   const breakdown: TaxBreakdown = {
@@ -40,22 +62,26 @@ export function computeTaxBreakdown(items: TaxItem[]): TaxBreakdown {
 
   for (const item of items) {
     const amount = item.lineTotal;
-    const r = rateFor(item.taxRate);
-    const tax = amount.mul(r);
+    const rate = item.taxRate;
 
-    if (item.taxRate === 'VAT_16') {
-      breakdown.vat16.taxable = breakdown.vat16.taxable.add(amount);
-      breakdown.vat16.tax = breakdown.vat16.tax.add(tax);
-    } else if (item.taxRate === 'VAT_8') {
-      breakdown.vat8.taxable = breakdown.vat8.taxable.add(amount);
-      breakdown.vat8.tax = breakdown.vat8.tax.add(tax);
-    } else if (item.taxRate === 'EXEMPT') {
+    if (rate === 'VAT_16' || rate === 'VAT_8') {
+      const r = rateFor(rate);
+      const { base, tax } = extractVatInclusive(amount, r);
+
+      if (rate === 'VAT_16') {
+        breakdown.vat16.taxable = breakdown.vat16.taxable.add(base);
+        breakdown.vat16.tax = breakdown.vat16.tax.add(tax);
+      } else {
+        breakdown.vat8.taxable = breakdown.vat8.taxable.add(base);
+        breakdown.vat8.tax = breakdown.vat8.tax.add(tax);
+      }
+
+      breakdown.totalTax = breakdown.totalTax.add(tax);
+    } else if (rate === 'EXEMPT') {
       breakdown.exempt.amount = breakdown.exempt.amount.add(amount);
-    } else if (item.taxRate === 'ZERO') {
+    } else if (rate === 'ZERO') {
       breakdown.zeroRated.amount = breakdown.zeroRated.amount.add(amount);
     }
-
-    breakdown.totalTax = breakdown.totalTax.add(tax);
   }
 
   return breakdown;

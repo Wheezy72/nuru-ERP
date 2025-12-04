@@ -104,6 +104,12 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
+    label: 'Trips & Gate Passes',
+    path: '/logistics/trips',
+    group: 'Maker',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     label: 'Projects',
     path: '/projects',
     group: 'Planner',
@@ -129,14 +135,32 @@ const navItems: NavItem[] = [
     featureFlag: 'enableChama',
   },
   {
+    label: 'M-Pesa Reconcile',
+    path: '/banking/mpesa-reconcile',
+    group: 'Banking',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     label: 'Business Setup',
     path: '/setup',
     group: 'Settings',
     roles: ['ADMIN'],
   },
   {
+    label: 'Import Data',
+    path: '/settings/import',
+    group: 'Settings',
+    roles: ['ADMIN'],
+  },
+  {
     label: 'Audit Log',
     path: '/settings/audit-log',
+    group: 'Settings',
+    roles: ['ADMIN'],
+  },
+  {
+    label: 'Coupons',
+    path: '/settings/coupons',
     group: 'Settings',
     roles: ['ADMIN'],
   },

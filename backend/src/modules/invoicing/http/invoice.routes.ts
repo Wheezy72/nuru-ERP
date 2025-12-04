@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { InvoiceService } from '../core/InvoiceService';
+import { TaxService } from '../../accounting/core/TaxService';
 import { requireAuth } from '../../../shared/middleware/requireRole';
 
 const router = Router();
@@ -61,7 +62,18 @@ router.post('/', async (req, res, next) => {
   try {
     const tenantId = getTenantId(req);
     const service = new InvoiceService(tenantId);
-    const invoice = await service.createInvoice(req.body);
+
+    const trainingHeader = (req.headers['x-training-mode'] ||
+      req.headers['x_training_mode'] ||
+      '') as string;
+    const isTraining =
+      typeof trainingHeader === 'string' &&
+      ['1', 'true', 'yes'].includes(trainingHeader.toLowerCase());
+
+    const invoice = await service.createInvoice({
+      ...req.body,
+      isTraining,
+    });
     res.status(201).json(invoice);
   } catch (err) {
     next(err);
@@ -82,6 +94,16 @@ router.post('/:id/post', async (req, res, next) => {
       locationId || '',
       userId
     );
+
+    // Enqueue for tax signing if tax integration is configured.
+    try {
+      const taxService = new TaxService(tenantId);
+      await taxService.enqueueInvoice(invoice.id);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to enqueue invoice for tax signing', err);
+    }
+
     res.json(invoice);
   } catch (err) {
     next(err);

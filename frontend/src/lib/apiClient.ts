@@ -30,5 +30,11 @@ apiClient.interceptors.request.use((config) => {
     config.headers['x-user-id'] = userId;
   }
 
+  const training = localStorage.getItem('nuru_training');
+  if (training === '1') {
+    config.headers = config.headers || {};
+    config.headers['x-training-mode'] = 'true';
+  }
+
   return config;
 });

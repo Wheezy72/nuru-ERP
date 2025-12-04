@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Prisma } from '@prisma/client';
 import { createTenantPrismaClient } from '../prisma/client';
 import { LoyaltyService } from '../../modules/customers/core/LoyaltyService';
+import { WhatsAppService } from '../whatsapp/WhatsAppService';
 
 export class GatewayService {
   private tenantId: string;
@@ -173,6 +174,7 @@ export class GatewayService {
     const newPaidTotal = alreadyPaid.add(paymentAmount);
 
     const totalAmountDecimal = invoice.totalAmount as unknown as Prisma.Decimal;
+    const balanceDecimal = totalAmountDecimal.sub(newPaidTotal);
 
     let newStatus = invoice.status;
     if (paymentAmount.gt(0)) {
@@ -190,16 +192,17 @@ export class GatewayService {
 
     if (paymentAmount.gt(0)) {
       await prisma.transaction.create({
-        data: {
-          tenantId: this.tenantId,
-          invoiceId: invoice.id,
-          accountId: null,
-          amount: paymentAmount,
-          type: 'Credit',
-          reference:
-            gatewayRef || `Card payment for ${invoice.invoiceNo}`,
-        },
-      });
+      data: {
+        tenantId: this.tenantId,
+        invoiceId: invoice.id,
+        accountId: null,
+        amount: paymentAmount,
+        type: 'Credit',
+        paymentMethod: 'CARD',
+        reference:
+          gatewayRef || `Gateway payment for ${invoice.invoiceNo}`,
+      },
+    });
     }
 
     await prisma.systemLog.create({
@@ -236,9 +239,28 @@ export class GatewayService {
         // eslint-disable-next-line no-console
         console.error(
           'Failed to record GL cash receipt for card/bank payment',
-          err
+          err,
         );
       }
+    }
+
+    // Fire-and-forget WhatsApp payment receipt; failure should not block callback.
+    try {
+      const customer = invoice.customer;
+      if (customer?.phone && paymentAmount.gt(0)) {
+        const whatsapp = new WhatsAppService(this.tenantId);
+        await whatsapp.sendPaymentReceipt(customer.phone, {
+          invoiceNo: invoice.invoiceNo,
+          amountPaid: paymentAmount.toString(),
+          totalAmount: totalAmountDecimal.toString(),
+          balance: balanceDecimal.toString(),
+          method: 'CARD',
+          customerName: customer.name,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send card/bank payment receipt via WhatsApp', err);
     }
 
     return updated;

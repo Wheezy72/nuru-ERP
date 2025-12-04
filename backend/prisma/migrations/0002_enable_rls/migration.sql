@@ -47,7 +47,11 @@ DECLARE
     'public."Employee"',
     'public."PasswordResetToken"',
     'public."Asset"',
-    'public."DepreciationRun"'
+    'public."DepreciationRun"',
+    'public."PriceList"',
+    'public."PriceListItem"',
+    'public."Coupon"',
+    'public."CouponRedemption"'
   ];
   tbl text;
 BEGIN
